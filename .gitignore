@@ -51,3 +51,7 @@ skills-lock.json
 
 # dev logs
 *.log
+
+# Throwaway MCP/verification scripts used to drive Supabase during the build.
+# They hold admin keys, so they are never committed.
+.tmp-mcp/

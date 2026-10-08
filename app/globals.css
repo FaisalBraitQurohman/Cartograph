@@ -29,6 +29,7 @@
   --accent: #2563eb;
   --incoming: #16a34a;
   --outgoing: #d97706;
+  --danger: #dc2626;
 }
 
 .dark {
@@ -42,6 +43,7 @@
   --accent: #3b82f6;
   --incoming: #22c55e;
   --outgoing: #f59e0b;
+  --danger: #f87171;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -56,6 +58,7 @@
     --accent: #3b82f6;
     --incoming: #22c55e;
     --outgoing: #f59e0b;
+    --danger: #f87171;
   }
 }
 
@@ -68,6 +71,7 @@
   --color-accent: var(--accent);
   --color-incoming: var(--incoming);
   --color-outgoing: var(--outgoing);
+  --color-danger: var(--danger);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -77,4 +81,74 @@ body {
   background: var(--surface);
   color: var(--text);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+
+.metric-cell {
+  position: relative;
+  min-width: 0;
+  padding: 1rem 1rem 1.125rem;
+}
+
+.metric-cell:nth-child(even)::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--border);
+  content: "";
+}
+
+.metric-cell:nth-child(n + 3)::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--border);
+  content: "";
+}
+
+@media (min-width: 640px) {
+  .metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .metric-cell {
+    padding: 1rem 1.25rem 1.125rem;
+  }
+
+  .metric-cell:nth-child(even)::before,
+  .metric-cell:nth-child(n + 3)::after {
+    display: none;
+  }
+
+  .metric-cell:nth-child(n + 2)::before {
+    display: block;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: var(--border);
+    content: "";
+  }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

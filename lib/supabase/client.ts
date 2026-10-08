@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useSession } from "@clerk/nextjs";
 import { publicEnv } from "@/lib/env";
+import type { Database } from "@/types/database";
 
 /**
  * Browser Supabase client, carrying the Clerk session token the same way the
@@ -17,7 +18,7 @@ export function useSupabaseClient() {
 
   return useMemo(
     () =>
-      createClient(
+      createClient<Database>(
         publicEnv.supabaseUrl,
         publicEnv.supabasePublishableKey,
         {
@@ -29,3 +30,4 @@ export function useSupabaseClient() {
     [session],
   );
 }
+

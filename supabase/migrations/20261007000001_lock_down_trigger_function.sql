@@ -1,0 +1,11 @@
+-- The auto-RLS trigger function must not be callable over the API.
+--
+-- It is a `SECURITY DEFINER` function in the exposed `public` schema, so
+-- PostgREST would otherwise publish it at `/rest/v1/rpc/rls_auto_enable` and
+-- any signed-in — or anonymous — caller could invoke it. It does nothing
+-- dangerous on its own, but a function that only an event trigger should ever
+-- run has no business being an endpoint.
+--
+-- Revoking `EXECUTE` does not affect the trigger: event triggers are invoked by
+-- the system, which does not perform an `EXECUTE` privilege check.
+revoke execute on function public.rls_auto_enable() from public, anon, authenticated;

@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Throwaway MCP/verification scripts used to drive the database during the
+    // build. Not application code, not shipped.
+    ".tmp-mcp/**",
   ]),
 ]);
 
