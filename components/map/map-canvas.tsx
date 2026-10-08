@@ -284,7 +284,8 @@ function buildEdges(map: MapGraph, interaction: MapInteraction): Edge[] {
   /**
    * What the edges are being read against.
    *
-   * Every row an open panel is showing, whether or not anything is selected.
+   * Every row an open panel is showing and its panel, whether or not anything
+   * is selected. The panel also represents files outside its scroll window.
    * Opening a folder is already a statement that those files matter, so their
    * edges say which way they run without anything having to be picked first.
    *
@@ -300,7 +301,7 @@ function buildEdges(map: MapGraph, interaction: MapInteraction): Edge[] {
    */
   const anchor =
     map.rows.length > 0 || selection !== null
-      ? new Set([...map.rows.map((row) => row.id), ...(selection ? [selection] : [])])
+      ? new Set([...map.rows.flatMap((row) => [row.id, row.panelId]), ...(selection ? [selection] : [])])
       : null;
 
   return map.edges.map((edge) => {

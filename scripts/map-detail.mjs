@@ -106,9 +106,9 @@ function run(parse) {
       continue;
     }
 
-    // The acceptance check: if it says seven, seven paths are listed.
-    const distinctImports = new Set(detail.imports.map((row) => row.path)).size;
-    const distinctImporters = new Set(detail.importedBy.map((row) => row.path)).size;
+    // Expected neighbours come from the parse, independently of the detail lists.
+    const distinctImports = new Set(parse.edges.filter((edge) => edge.from === file.path).map((edge) => edge.to)).size;
+    const distinctImporters = new Set(parse.edges.filter((edge) => edge.to === file.path).map((edge) => edge.from)).size;
     if (distinctImports !== detail.imports.length) mismatched += 1;
     if (distinctImporters !== detail.importedBy.length) mismatched += 1;
     if (detail.path !== file.path) mismatched += 1;
@@ -118,11 +118,11 @@ function run(parse) {
   }
 
   if (mismatched > 0) {
-    fail("File counts", `${mismatched} files disagree with their own lists`);
+    fail("File counts", `${mismatched} file checks disagree with the parse`);
   } else {
     pass(
       "File counts",
-      `all ${parse.files.length} files: every count equals its list length, no duplicate rows`,
+      `all ${parse.files.length} files: list lengths match distinct neighbours in the parse`,
     );
   }
 
@@ -204,6 +204,15 @@ function run(parse) {
     );
     if (expected.length !== detail.fileCount) {
       fail(`Folder ${folder.path}`, `pane says ${detail.fileCount} files, parse has ${expected.length} there`);
+      continue;
+    }
+
+    const held = new Set(expected.map((file) => file.path));
+    const internalPairs = new Set(
+      parse.edges.filter((edge) => held.has(edge.from) && held.has(edge.to)).map((edge) => JSON.stringify([edge.from, edge.to])),
+    );
+    if (detail.internalEdgeCount !== internalPairs.size) {
+      fail(`Folder ${folder.path}`, `pane says ${detail.internalEdgeCount} internal imports, parse has ${internalPairs.size} distinct pairs`);
       continue;
     }
 

@@ -125,7 +125,7 @@ export interface FolderDetail {
   fanOut: number;
   /** How the folder divides up: its subfolders and its own loose files. */
   parts: FolderPart[];
-  /** Import edges wholly inside this folder, which a collapsed box cannot draw. */
+  /** Distinct directed file pairs inside this folder, which a collapsed box cannot draw. */
   internalEdgeCount: number;
 }
 
@@ -272,9 +272,9 @@ export function describeFolder(
   // they do not exist, and saying so is the difference between "no internal
   // imports" and "not visible while folded".
   const held = new Set(files.map((file) => file.path));
-  let internalEdgeCount = 0;
+  const internalPairs = new Set<string>();
   for (const edge of parse.edges) {
-    if (held.has(edge.from) && held.has(edge.to)) internalEdgeCount += 1;
+    if (held.has(edge.from) && held.has(edge.to)) internalPairs.add(JSON.stringify([edge.from, edge.to]));
   }
 
   return {
@@ -288,7 +288,7 @@ export function describeFolder(
     parts: [...byPart.values()].sort(
       (left, right) => right.fileCount - left.fileCount || compare(left.id, right.id),
     ),
-    internalEdgeCount,
+    internalEdgeCount: internalPairs.size,
   };
 }
 

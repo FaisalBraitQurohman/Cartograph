@@ -151,7 +151,7 @@ function RepositoryStructure({
 
       <div className="grid grid-cols-3 gap-px border-b border-border bg-border">
         <Figure label="files" value={detail.fileCount} />
-        <Figure label="imports" value={detail.importCount} />
+        <Figure label="import statements" value={detail.importCount} />
         {/*
           Routes are stated as not parsed rather than as zero. The parser does not
           extract them, so "0" would claim this repository has no routes when it

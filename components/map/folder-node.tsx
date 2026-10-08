@@ -152,9 +152,12 @@ function ScrollStep({
   return (
     <button
       aria-label={label}
-      className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[2px] text-text-muted hover:bg-surface hover:text-text disabled:cursor-default disabled:opacity-30"
+      className="nodrag flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[2px] text-text-muted hover:bg-surface hover:text-text disabled:cursor-default disabled:opacity-30"
       disabled={disabled}
-      onClick={onClick}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
       title={label}
       type="button"
     >

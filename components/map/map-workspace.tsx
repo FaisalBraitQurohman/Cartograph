@@ -69,7 +69,7 @@ export function MapWorkspace({
   /**
    * The item a hovered file path is drawn as.
    *
-   * A file inside a closed folder has no row of its own — the box holds it — so
+   * A file in a closed folder or outside its scroll window has no row — so
    * hovering its path in the pane lights up the box. Reading the same expansion
    * state the map was built from is what keeps the two views pointing at one
    * object rather than at a name that happens to match.
@@ -77,11 +77,8 @@ export function MapWorkspace({
   const itemOfPath = useMemo(() => {
     const drawn = new Map<string, string>();
     for (const folder of map.folders) {
-      if (!folder.open) {
-        const node = fold.nodes.find((candidate) => candidate.id === folderPathOf(folder.id));
-        for (const path of node?.files ?? []) drawn.set(path, folder.id);
-        continue;
-      }
+      const node = fold.nodes.find((candidate) => candidate.id === folderPathOf(folder.id));
+      for (const path of node?.files ?? []) drawn.set(path, folder.id);
       for (const row of folder.rows) drawn.set(row.path, row.id);
     }
     return drawn;
