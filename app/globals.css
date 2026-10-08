@@ -30,6 +30,24 @@
   --incoming: #16a34a;
   --outgoing: #d97706;
   --danger: #dc2626;
+
+  --edge: #c4c4c9;
+
+  /*
+   * File categories get a colour because a category is a kind of thing a file
+   * is, and the palette allows a handful of hues to separate them. Eight, none
+   * of them the accent or either direction colour: blue means interactive,
+   * green means incoming and amber means outgoing, and a swatch that reused one
+   * of those would say two things at once.
+   */
+  --kind-1: #7c3aed;
+  --kind-2: #0d9488;
+  --kind-3: #e11d48;
+  --kind-4: #ea580c;
+  --kind-5: #4f46e5;
+  --kind-6: #65a30d;
+  --kind-7: #c026d3;
+  --kind-8: #0891b2;
 }
 
 .dark {
@@ -44,6 +62,17 @@
   --incoming: #22c55e;
   --outgoing: #f59e0b;
   --danger: #f87171;
+
+  --edge: #3f3f46;
+
+  --kind-1: #a78bfa;
+  --kind-2: #2dd4bf;
+  --kind-3: #fb7185;
+  --kind-4: #fb923c;
+  --kind-5: #818cf8;
+  --kind-6: #a3e635;
+  --kind-7: #e879f9;
+  --kind-8: #22d3ee;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -59,6 +88,17 @@
     --incoming: #22c55e;
     --outgoing: #f59e0b;
     --danger: #f87171;
+
+    --edge: #3f3f46;
+
+    --kind-1: #a78bfa;
+    --kind-2: #2dd4bf;
+    --kind-3: #fb7185;
+    --kind-4: #fb923c;
+    --kind-5: #818cf8;
+    --kind-6: #a3e635;
+    --kind-7: #e879f9;
+    --kind-8: #22d3ee;
   }
 }
 
@@ -72,6 +112,16 @@
   --color-incoming: var(--incoming);
   --color-outgoing: var(--outgoing);
   --color-danger: var(--danger);
+  --color-edge: var(--edge);
+
+  --color-kind-1: var(--kind-1);
+  --color-kind-2: var(--kind-2);
+  --color-kind-3: var(--kind-3);
+  --color-kind-4: var(--kind-4);
+  --color-kind-5: var(--kind-5);
+  --color-kind-6: var(--kind-6);
+  --color-kind-7: var(--kind-7);
+  --color-kind-8: var(--kind-8);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -142,6 +192,60 @@ body {
     background: var(--border);
     content: "";
   }
+}
+
+/*
+ * React Flow reads its light/dark from a `colorMode` prop and resolves
+ * "system" against prefers-color-scheme on the client only. The server has no
+ * document, so it always renders `light` — a hydration mismatch, and a second
+ * source of truth for a preference this application already owns through the
+ * class on <html>.
+ *
+ * So it is not passed. Every one of these is a CSS variable, which the class on
+ * <html> reaches by inheritance, leaving no prop that can disagree between the
+ * two renders. Edges and nodes set their own colours inline; this covers what
+ * React Flow styles itself.
+ *
+ * The selector carries an extra class on purpose. React Flow's own `.react-flow
+ * .dark` rule has the same specificity as `.dark .react-flow`, so which one won
+ * would come down to the order two separately-emitted stylesheets happened to
+ * load in. `html.dark` is (0,2,1) and cannot be matched.
+ */
+html .react-flow {
+  --xy-attribution-background-color-default: rgb(24 24 27 / 8%);
+  --xy-edge-stroke-default: var(--edge);
+  --xy-controls-button-background-color-default: var(--surface-raised);
+  --xy-controls-button-background-color-hover-default: var(--surface);
+  --xy-controls-button-border-color-default: var(--border);
+  --xy-controls-button-color-default: var(--text-muted);
+  --xy-controls-button-color-hover-default: var(--text);
+  --xy-controls-box-shadow-default: none;
+}
+
+html.dark .react-flow {
+  --xy-attribution-background-color-default: rgb(237 237 237 / 8%);
+}
+
+/*
+ * Edges behind nodes, explicitly.
+ *
+ * React Flow already emits the edge layer before the node layer, so nodes paint
+ * on top — but only by document order, with no z-index on either. A row inside
+ * an open panel carries a z-index of its own, which lifts it into the root
+ * stacking context and can leave an edge drawn across the panel it belongs to.
+ * Naming the two layers makes it a fact rather than an accident of emission
+ * order, and an edge label sits between them as it should.
+ */
+html .react-flow__edges {
+  z-index: 0;
+}
+
+html .react-flow__nodes {
+  z-index: 1;
+}
+
+html .react-flow__edgelabel-renderer {
+  z-index: 2;
 }
 
 ::selection {
