@@ -14,7 +14,7 @@ import {
   type Node,
   type NodeTypes,
 } from "@xyflow/react";
-import { PANEL_HEADER_HEIGHT, PANEL_ROW_HEIGHT, type MapGraph } from "@/lib/graph/graph.ts";
+import { PANEL_HEADER_HEIGHT, PANEL_ROW_HEIGHT, type MapGraph, type MapRow } from "@/lib/graph/graph.ts";
 import { edgeDirection, isEdgeLit } from "@/lib/graph/highlight.ts";
 import { boundsOf, type PlacedBox } from "@/lib/graph/layout.ts";
 import { FileRowView, type FileFlowNode } from "./file-row";
@@ -278,6 +278,11 @@ function buildNodes(map: MapGraph, placed: ReadonlyMap<string, PlacedBox>): Node
   return [...folders, ...rows];
 }
 
+/** Which panel each drawn row belongs to, so an internal edge can be recognised. */
+function panelOfRows(rows: readonly MapRow[]): Map<string, string> {
+  return new Map(rows.map((row) => [row.id, row.panelId]));
+}
+
 function buildEdges(map: MapGraph, interaction: MapInteraction): Edge[] {
   const { selection, lit } = interaction;
 
@@ -298,10 +303,18 @@ function buildEdges(map: MapGraph, interaction: MapInteraction): Edge[] {
    *
    * The selection joins the same set rather than replacing it, so selecting a
    * file adds its edges to the ones already coloured.
+   *
+   * `panelOf` is what separates an edge internal to one folder from one running
+   * between two. Putting the panels in the anchor instead does not: the anchor is
+   * every open folder's rows, so both ends of a cross-folder edge are in it too and
+   * the edge is read as internal. That left 0 of 77 edges coloured with one folder
+   * open, and 0 of 414 with all of them.
    */
+  const panelOf = panelOfRows(map.rows);
+
   const anchor =
     map.rows.length > 0 || selection !== null
-      ? new Set([...map.rows.flatMap((row) => [row.id, row.panelId]), ...(selection ? [selection] : [])])
+      ? new Set([...map.rows.map((row) => row.id), ...(selection ? [selection] : [])])
       : null;
 
   return map.edges.map((edge) => {
@@ -311,7 +324,7 @@ function buildEdges(map: MapGraph, interaction: MapInteraction): Edge[] {
     // — it would keep an edge whose far end had been dimmed.
     const edgeIsLit = isEdgeLit(map, edge, lit);
 
-    const direction = edgeIsLit ? edgeDirection(edge, anchor) : null;
+    const direction = edgeIsLit ? edgeDirection(edge, anchor, panelOf) : null;
     const color =
       direction === "incoming"
         ? "var(--incoming)"

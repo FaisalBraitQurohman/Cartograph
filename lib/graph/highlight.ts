@@ -102,20 +102,53 @@ export function isEdgeLit(
  * coloured the moment it opens. No edge ever terminates on a panel — they all
  * land on the rows inside it — so anchoring to the panel would leave every one
  * of them without a direction and the whole folder would read as unconnected.
+ *
+ * `panelOf` maps a drawn row to the panel holding it, and it is what separates an
+ * edge internal to one folder from one running between two. That distinction
+ * cannot be read off the anchor: the anchor holds every row of *every* open
+ * folder, so "both ends are in it" means "both ends are in some open folder" and
+ * said so about edges between two different folders as well. One folder open left
+ * 0 of its 77 edges coloured and all 24 open left 0 of 414. Membership says which
+ * folder an edge is in; this does.
  */
 export function edgeDirection(
   edge: { source: string; target: string },
   anchor: ReadonlySet<string> | null,
+  panelOf?: ReadonlyMap<string, string>,
 ): "incoming" | "outgoing" | null {
   if (anchor === null) return null;
-  // Both ends inside the thing being looked at means nothing about how anything
-  // gets into it or out of it. Reporting "incoming" for an edge between two files of
-  // the same open folder drew a green arrow into the panel for a relationship wholly
+  // Both ends inside one and the same folder means nothing about how anything gets
+  // into it or out of it. Reporting "incoming" for an edge between two files of the
+  // same open folder drew a green arrow into the panel for a relationship wholly
   // internal to it — and because a closed box hides exactly those edges, opening
   // the folder appeared to reverse the direction of an arrow that had meant
   // something else entirely.
-  if (anchor.has(edge.target) && anchor.has(edge.source)) return null;
+  if (panelOf && isInsideOneFolder(edge, panelOf)) return null;
   if (anchor.has(edge.target)) return "incoming";
   if (anchor.has(edge.source)) return "outgoing";
   return null;
+}
+
+/**
+ * Whether both ends of an edge are inside one and the same folder.
+ *
+ * Three shapes count, and all of them are internal. Two visible rows of one panel,
+ * which is an import between two files of the same folder. A row whose other end is
+ * its own panel, which happens when the target is a file the scroll window is not
+ * showing and the panel stands in for it. And two rows of the same panel that reach
+ * each other through neither of those, which is the first case again.
+ */
+function isInsideOneFolder(
+  edge: { source: string; target: string },
+  panelOf: ReadonlyMap<string, string>,
+): boolean {
+  const sourcePanel = panelOf.get(edge.source);
+  const targetPanel = panelOf.get(edge.target);
+
+  if (sourcePanel !== undefined && targetPanel !== undefined) return sourcePanel === targetPanel;
+  // One end is a drawn row, the other is the box standing in for a file that is not
+  // currently on screen.
+  if (sourcePanel !== undefined) return sourcePanel === edge.target;
+  if (targetPanel !== undefined) return targetPanel === edge.source;
+  return false;
 }

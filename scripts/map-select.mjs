@@ -104,10 +104,11 @@ function run(parse) {
   //    with nothing selected at all.
   if (panel) {
     const openMap = deriveMap(parse, fold, new Set([panel.path]));
-    const anchor = new Set(openMap.rows.flatMap((row) => [row.id, row.panelId]));
-    const coloured = openMap.edges.filter((edge) => edgeDirection(edge, anchor) !== null);
-    const incoming = coloured.filter((edge) => edgeDirection(edge, anchor) === "incoming");
-    const outgoing = coloured.filter((edge) => edgeDirection(edge, anchor) === "outgoing");
+    const anchor = new Set(openMap.rows.map((row) => row.id));
+    const rowPanels = new Map(openMap.rows.map((row) => [row.id, row.panelId]));
+    const coloured = openMap.edges.filter((edge) => edgeDirection(edge, anchor, rowPanels) !== null);
+    const incoming = coloured.filter((edge) => edgeDirection(edge, anchor, rowPanels) === "incoming");
+    const outgoing = coloured.filter((edge) => edgeDirection(edge, anchor, rowPanels) === "outgoing");
 
     failures += check(
       `Opened "${panel.path}", nothing selected`,
@@ -117,10 +118,10 @@ function run(parse) {
 
     // Closed, with nothing on screen, no edge has anything to be measured
     // against and none claims a direction.
-    const closedAnchor = new Set(closed.rows.flatMap((row) => [row.id, row.panelId]));
+    const closedAnchor = new Set(closed.rows.map((row) => row.id));
     failures += check(
       "Nothing open, nothing selected",
-      closed.edges.every((edge) => edgeDirection(edge, closedAnchor) === null),
+      closed.edges.every((edge) => edgeDirection(edge, closedAnchor, new Map()) === null),
       "no edge claims a direction",
     );
   }
@@ -139,13 +140,14 @@ function run(parse) {
     );
     if (other) {
       const bothOpen = deriveMap(parse, fold, new Set([panel.path, other.path]));
-      const anchor = new Set([...bothOpen.rows.flatMap((row) => [row.id, row.panelId]), panel.id]);
+      const anchor = new Set([...bothOpen.rows.map((row) => row.id), panel.id]);
+      const bothPanels = new Map(bothOpen.rows.map((row) => [row.id, row.panelId]));
 
       // The rows of the folder that was NOT the selection still get direction.
       const otherRows = bothOpen.rows.filter((row) => row.panelId === folderItemId(other.path));
       const otherColoured = bothOpen.edges.filter(
         (edge) =>
-          edgeDirection(edge, anchor) !== null &&
+          edgeDirection(edge, anchor, bothPanels) !== null &&
           (edge.source === folderItemId(other.path) ||
             edge.target === folderItemId(other.path) ||
             otherRows.some((row) => row.id === edge.source || row.id === edge.target)),
@@ -221,32 +223,94 @@ function run(parse) {
   // 7. An edge wholly inside the open panel has no direction to report. Reporting
   //    one draws a coloured arrow into a folder for a relationship that never
   //    crosses its boundary.
+  //    The anchor is every row of every open folder, so "both ends are in it" means
+  //    "both ends are in some open folder" and cannot tell an internal edge from one
+  //    running between two. That is what the panel map is for, and it is passed to
+  //    `edgeDirection` here exactly as the canvas passes it.
   const opened = deriveMap(parse, fold, new Set(fold.nodes.map((node) => node.id)));
-  const openAnchor = new Set(opened.rows.flatMap((row) => [row.id, row.panelId]));
-  const internal = opened.edges.filter(
-    (edge) => openAnchor.has(edge.source) && openAnchor.has(edge.target),
-  );
+  const openAnchor = new Set(opened.rows.map((row) => row.id));
+  const rowPanels = new Map(opened.rows.map((row) => [row.id, row.panelId]));
+
+  const isInsideOneFolder = (edge) => {
+    const source = rowPanels.get(edge.source);
+    const target = rowPanels.get(edge.target);
+    if (source !== undefined && target !== undefined) return source === target;
+    if (source !== undefined) return source === edge.target;
+    if (target !== undefined) return target === edge.source;
+    return false;
+  };
+
+  const internal = opened.edges.filter((edge) => isInsideOneFolder(edge));
   failures += check(
-    `${internal.length} edges inside open panels`,
-    internal.every((edge) => edgeDirection(edge, openAnchor) === null),
-    `${internal.filter((edge) => edgeDirection(edge, openAnchor) !== null).length} claim a direction`,
+    `${internal.length} edges inside one open folder`,
+    internal.every((edge) => edgeDirection(edge, openAnchor, rowPanels) === null),
+    `${internal.filter((edge) => edgeDirection(edge, openAnchor, rowPanels) !== null).length} claim a direction`,
   );
 
-  const rowPanels = new Map(opened.rows.map((row) => [row.id, row.panelId]));
+  // The row-to-its-own-panel case on its own, because it is the one that is easy to
+  // miss. The panel stands in for a file the scroll window is not showing, so the
+  // two are still one folder.
   const rowPanelEdges = opened.edges.filter(
     (edge) => rowPanels.get(edge.source) === edge.target || rowPanels.get(edge.target) === edge.source,
   );
   failures += check(
     "Rows connected to their own panel",
-    rowPanelEdges.length > 0 && rowPanelEdges.every((edge) => edgeDirection(edge, openAnchor) === null),
-    `${rowPanelEdges.length} edges, ${rowPanelEdges.filter((edge) => edgeDirection(edge, openAnchor) !== null).length} claim a direction`,
+    rowPanelEdges.length > 0 &&
+      rowPanelEdges.every((edge) => edgeDirection(edge, openAnchor, rowPanels) === null),
+    `${rowPanelEdges.length} edges, ${
+      rowPanelEdges.filter((edge) => edgeDirection(edge, openAnchor, rowPanels) !== null).length
+    } claim a direction`,
   );
-  const panelAnchor = new Set(open.rows.flatMap((row) => [row.id, row.panelId]));
-  const incoming = open.edges.filter((edge) => !panelAnchor.has(edge.source) && panelAnchor.has(edge.target));
+
+  // And the opposite direction, which is what putting the panels in the anchor broke.
+  // Two different folders open at once must still be coloured against each other, or
+  // opening a second folder silences everything between the two.
+  const betweenPanels = opened.edges.filter((edge) => {
+    const source = rowPanels.get(edge.source);
+    const target = rowPanels.get(edge.target);
+    return source !== undefined && target !== undefined && source !== target;
+  });
+  const colouredBetween = betweenPanels.filter(
+    (edge) => edgeDirection(edge, openAnchor, rowPanels) !== null,
+  ).length;
+  failures += check(
+    `${betweenPanels.length} edges between different open folders`,
+    colouredBetween === betweenPanels.length,
+    `${colouredBetween} still claim a direction`,
+  );
+
+  // An edge arriving from outside an open panel is incoming.
+  //
+  // "Outside" excludes the panel's own id as well as its own rows. The panel is a
+  // box holding the folder, and an edge from that box to a row inside it is the
+  // folder reaching into itself — internal, like the row-to-own-panel case above.
+  // Filtering only on rows counted five of those as arrivals from elsewhere, which
+  // is why this failed against correct behaviour.
+  const singleOpen = deriveMap(parse, fold, new Set([panel.path]));
+  const singleRows = new Set(singleOpen.rows.map((row) => row.id));
+  const singlePanels = new Map(singleOpen.rows.map((row) => [row.id, row.panelId]));
+  const singlePanelId = folderItemId(panel.path);
+  const arriving = singleOpen.edges.filter(
+    (edge) =>
+      singleRows.has(edge.target) && !singleRows.has(edge.source) && edge.source !== singlePanelId,
+  );
   failures += check(
     "Edges from other folders remain incoming",
-    incoming.length > 0 && incoming.every((edge) => edgeDirection(edge, panelAnchor) === "incoming"),
-    `${incoming.length} incoming edges`,
+    arriving.length > 0 &&
+      arriving.every((edge) => edgeDirection(edge, singleRows, singlePanels) === "incoming"),
+    `${arriving.length} arriving edges, all still green`,
+  );
+
+  // One folder open is the case that reads worst, because the map looks connected
+  // and simply has no colour on it. Stated as a number rather than left to be noticed.
+  const oneOpen = deriveMap(parse, fold, new Set([panel.path]));
+  const oneAnchor = new Set(oneOpen.rows.map((row) => row.id));
+  const onePanels = new Map(oneOpen.rows.map((row) => [row.id, row.panelId]));
+  const oneColoured = oneOpen.edges.filter((edge) => edgeDirection(edge, oneAnchor, onePanels) !== null).length;
+  failures += check(
+    `One folder open (${panel.path})`,
+    oneColoured > 0,
+    `${oneColoured} of ${oneOpen.edges.length} edges coloured`,
   );
 
   // 8. No selection dims itself, and no selection leaves an edge bright whose
