@@ -1,4 +1,5 @@
 import type { RepositoryParseResult } from "@/parser/types.mts";
+import { bucketOf } from "./categories.ts";
 import type { FoldResult, FolderNode } from "./fold.ts";
 import { shortestUniqueLabels } from "./labels.ts";
 
@@ -99,6 +100,16 @@ export interface MapGraph {
   edges: MapEdge[];
   /** Every canvas item id, for the checks that edges must terminate on one. */
   itemIds: Set<string>;
+  /**
+   * How many of a folder's files sit in a category, keyed by folder path.
+   *
+   * Read off the fold rather than recomputed by a caller, so a panel's match count
+   * is the same number as the rail's row and not a second answer to the same
+   * question. Counted over the whole folder and not over the scroll window: a
+   * category lives in a folder, and a panel scrolled to its second page still
+   * belongs to it.
+   */
+  filesOf: (folderPath: string, categoryId: string) => number;
 };
 
 /**
@@ -112,6 +123,7 @@ export function deriveMap(
   fold: FoldResult,
   expanded: ReadonlySet<string>,
   scrolled: ReadonlyMap<string, number> = new Map(),
+  depth = 2,
 ): MapGraph {
   const nodeIds = new Set(fold.nodes.map((node) => node.id));
   const open = new Set([...expanded].filter((id) => nodeIds.has(id)));
@@ -215,7 +227,39 @@ export function deriveMap(
     ...rows.map((row) => row.id),
   ]);
 
-  return { folders, rows, edges, itemIds };
+  // Counted once over the files and once over the folders, rather than per category
+  // per folder. Sixteen categories across twenty-four folders is 384 buckets that
+  // way, and every one of them is thrown away when the reader clicks a different
+  // rail row.
+  const bucketOfFile = new Map(parse.files.map((file) => [file.path, bucketOf(file.folder, depth)]));
+  const filesPerBucket = new Map<string, Map<string, number>>();
+  for (const node of fold.nodes) {
+    const perBucket = new Map<string, number>();
+    for (const path of node.files) {
+      const bucket = bucketOfFile.get(path);
+      if (bucket === undefined) continue;
+      perBucket.set(bucket, (perBucket.get(bucket) ?? 0) + 1);
+    }
+    filesPerBucket.set(node.id, perBucket);
+  }
+
+  return {
+    folders,
+    rows,
+    edges,
+    itemIds,
+    /**
+     * How many of a folder's files sit in a category.
+     *
+     * Takes the folder path rather than the item id, because the counts are keyed by
+     * folder path. Accepting the id — the thing a caller has in hand when it is
+     * holding a node — and stripping the prefix here is the alternative, and it puts
+     * an `itemIds` prefix in a function that otherwise knows nothing about the
+     * canvas.
+     */
+    filesOf: (folderPath: string, categoryId: string): number =>
+      filesPerBucket.get(folderPath)?.get(categoryId) ?? 0,
+  };
 };
 
 function buildRows(

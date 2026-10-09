@@ -28,6 +28,14 @@ export type MapInteraction = {
   selectItem: (itemId: string | null) => void;
   /** A file path was clicked in the pane, whatever drew it. */
   selectPath: (path: string) => void;
+  /**
+   * The rail category currently dimming everything else, or null.
+   *
+   * Read by the nodes rather than passed to them, because the match count a folder
+   * shows is a function of this and of the fold, and React Flow does not thread a
+   * fourth argument through to a custom node.
+   */
+  category: string | null;
   /** A pointer left a node or a pane row. Null clears the hover. */
   hover: (id: string | null) => void;
   /** Move a panel's rows by one, forwards or back. */

@@ -13,10 +13,24 @@ import { useMapInteraction } from "./interaction";
  * that depend on it, and as wide as its label needs, so a long name never also
  * reads as an important folder.
  */
-export type FolderFlowNode = Node<MapFolder, "folder">;
+/**
+ * The node's own data, plus the one figure the map supplies and the fold does not.
+ *
+ * React Flow hands a node its props and nothing else, so anything a node needs has
+ * to arrive either in `data` or through context. The match count is a property of
+ * the folder *and* of which rail row is active, so it belongs to neither the fold
+ * nor the interaction — it is built where both are known.
+ */
+export type FolderFlowNode = Node<FolderNodeData, "folder">;
+
+export type FolderNodeData = MapFolder & {
+  /** How many of this folder's files are in the active category, or null. */
+  matches: FolderMatches;
+};
 
 export function FolderNodeView({ data }: NodeProps<FolderFlowNode>) {
   const { selection, lit, hovered, scrollPanel } = useMapInteraction();
+  const matches = data.matches;
   const dimmed = lit !== null && !lit.has(data.id);
   const chosen = selection === data.id;
   // A hover is a ring, never a colour change. Colour on this map means kind or
@@ -32,7 +46,11 @@ export function FolderNodeView({ data }: NodeProps<FolderFlowNode>) {
       } ${pointed ? "ring-2 ring-accent/45" : ""}`}
       style={{ opacity: dimmed ? 0.38 : 1 }}
     >
-      {data.open ? <PanelHeader data={data} /> : <ClosedBox data={data} />}
+      {data.open ? (
+        <PanelHeader data={data} matches={matches} />
+      ) : (
+        <ClosedBox data={data} matches={matches} />
+      )}
 
       {data.open ? <PanelFooter data={data} onScroll={(by) => scrollPanel(data.id, by)} /> : null}
 
@@ -43,11 +61,22 @@ export function FolderNodeView({ data }: NodeProps<FolderFlowNode>) {
 }
 
 /**
+ * How many of this folder's files are in the active category, or null when no
+ * category is chosen.
+ *
+ * Shown while a rail row is active, so the reader can see where the category lives
+ * without following the dimming to twenty-four boxes. It is the same number the rail
+ * prints for that row summed over the folders that hold it, which is what makes
+ * check 4 in the spec addable.
+ */
+export type FolderMatches = number | null;
+
+/**
  * What a panel's header has to carry: the folder's name, how many files are in
  * it, and its fan-in and fan-out. Clicking it puts the folder back to being one
  * closed box.
  */
-function PanelHeader({ data }: { data: MapFolder }) {
+function PanelHeader({ data, matches }: { data: MapFolder; matches: FolderMatches }) {
   return (
     <header className="border-b border-border px-2 pb-1 pt-1.5" style={{ height: PANEL_HEADER_HEIGHT }}>
       {/*
@@ -58,7 +87,11 @@ function PanelHeader({ data }: { data: MapFolder }) {
       <button className="block w-full cursor-pointer text-left" title={`Close ${data.path}`} type="button">
         <span className="block truncate font-mono text-[11px] leading-3 text-text">{data.label}</span>
         <span className="mt-[3px] flex items-baseline gap-2.5 text-[10px] leading-3 tabular-nums">
-          <span className="text-text-muted">{data.fileCount} files</span>
+          {matches === null ? (
+            <span className="text-text-muted">{data.fileCount} files</span>
+          ) : (
+            <MatchCount matches={matches} of={data.fileCount} />
+          )}
           <span className="text-incoming" title={`${data.fanIn} folders depend on it`}>
             ←{data.fanIn}
           </span>
@@ -72,12 +105,31 @@ function PanelHeader({ data }: { data: MapFolder }) {
 }
 
 /**
+ * The match count, or the ordinary file count when no category is active.
+ *
+ * The accent is the rail's own, so the number on a box and the row that dimmed it
+ * are visibly the same question. Zero says "none of this folder" rather than being
+ * hidden, because a box that is dimmed with nothing on it needs to be able to say so
+ * — that is how a reader tells "this folder has none" from "this folder was hidden".
+ */
+function MatchCount({ matches, of }: { matches: number; of: number }) {
+  return (
+    <span
+      className={matches === 0 ? "text-text-muted" : "text-accent"}
+      title={`${matches} of this folder's ${of} files are in the active category`}
+    >
+      {matches} of {of}
+    </span>
+  );
+}
+
+/**
  * A closed box shows the same three numbers an open panel's header does, because
  * those are what the box is for: how much is in it, how many folders depend on
  * it, and how many it depends on. The arrows are the direction, which is the
  * one thing colour on an edge cannot say while nothing is selected.
  */
-function ClosedBox({ data }: { data: MapFolder }) {
+function ClosedBox({ data, matches }: { data: MapFolder; matches: FolderMatches }) {
   return (
     <button
       className="flex h-full w-full cursor-pointer flex-col justify-center px-2.5 text-left"
@@ -86,7 +138,11 @@ function ClosedBox({ data }: { data: MapFolder }) {
     >
       <span className="truncate font-mono text-[11px] leading-3 text-text">{data.label}</span>
       <span className="mt-[3px] flex items-baseline gap-1.5 text-[10px] leading-3 tabular-nums">
-        <span className="text-text-muted">{data.fileCount} files</span>
+        {matches === null ? (
+          <span className="text-text-muted">{data.fileCount} files</span>
+        ) : (
+          <MatchCount matches={matches} of={data.fileCount} />
+        )}
         <span className="text-incoming" title={`${data.fanIn} folders depend on it`}>
           ←{data.fanIn}
         </span>

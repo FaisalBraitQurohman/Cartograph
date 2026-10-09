@@ -93,7 +93,7 @@ function Canvas({
   // purpose, so the ref below is the guard rather than a dependency list.
   const fitted = useRef(false);
 
-  const nodes = useMemo(() => buildNodes(map, placed), [map, placed]);
+  const nodes = useMemo(() => buildNodes(map, placed, interaction.category), [map, placed, interaction.category]);
   const edges = useMemo(() => buildEdges(map, interaction), [map, interaction]);
 
   /**
@@ -226,7 +226,11 @@ function Canvas({
  * the boxes are sized from the fold, not measured from the text inside them — so
  * this is stating a number that is already known, not guessing at one.
  */
-function buildNodes(map: MapGraph, placed: ReadonlyMap<string, PlacedBox>): Node[] {
+function buildNodes(
+  map: MapGraph,
+  placed: ReadonlyMap<string, PlacedBox>,
+  category: string | null,
+): Node[] {
   const folders: FolderFlowNode[] = map.folders.map((folder) => {
     const box = placed.get(folder.id) ?? {
       x: 0,
@@ -241,7 +245,7 @@ function buildNodes(map: MapGraph, placed: ReadonlyMap<string, PlacedBox>): Node
       width: box.width,
       height: box.height,
       measured: { width: box.width, height: box.height },
-      data: folder,
+      data: { ...folder, matches: category === null ? null : map.filesOf(folder.path, category) },
       draggable: true,
       deletable: false,
     };
