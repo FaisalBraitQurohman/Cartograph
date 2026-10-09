@@ -152,3 +152,32 @@ function isInsideOneFolder(
   if (targetPanel !== undefined) return targetPanel === edge.source;
   return false;
 }
+/**
+ * How strongly an edge is drawn, given what it means right now.
+ *
+ * Three weights rather than three colours. Colour on this map means direction, and
+ * an edge with no direction has no colour to spend — a third hue would claim
+ * something the edge does not know. What separates the three is how much of the map
+ * each is allowed to occupy.
+ *
+ * Full: an edge flowing into or out of what is being read. That is the answer, and
+ * it competes with nothing.
+ *
+ * Half: internal to a folder that is open. A real import between two files the
+ * reader has on screen, so it stays legible — but with no direction, and at the same
+ * weight as a coloured edge it read as one more thing to follow. This was the state
+ * that had no distinction: it was drawn full strength in the same grey as everything
+ * else, so it looked like an edge to follow and looked identical to an edge unrelated
+ * to the selection.
+ *
+ * A fifth: unrelated to the selection. Below about a fifth of full strength an edge
+ * stops being a line and becomes absence, which reads as a missing edge rather than
+ * an unrelated one, so this is the floor rather than something lower.
+ *
+ * Lives here, next to `edgeDirection`, because it is the other half of the same
+ * answer and the checks import both together.
+ */
+export function edgeOpacity(direction: "incoming" | "outgoing" | null, edgeIsLit: boolean): number {
+  if (!edgeIsLit) return 0.22;
+  return direction === null ? 0.5 : 1;
+}

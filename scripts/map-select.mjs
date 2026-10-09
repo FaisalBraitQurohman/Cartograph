@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { validateRepositoryParseResult } from "../parser/validate-result.mts";
 import { foldFolders } from "../lib/graph/fold.ts";
 import { deriveMap, folderItemId } from "../lib/graph/graph.ts";
-import { edgeDirection, isEdgeLit, litItems } from "../lib/graph/highlight.ts";
+import { edgeDirection, edgeOpacity, isEdgeLit, litItems } from "../lib/graph/highlight.ts";
 
 const resultPath = process.argv[2] ?? "data/preview/vuejs-devtools.json";
 const parsed = JSON.parse(readFileSync(resultPath, "utf8"));
@@ -311,6 +311,46 @@ function run(parse) {
     `One folder open (${panel.path})`,
     oneColoured > 0,
     `${oneColoured} of ${oneOpen.edges.length} edges coloured`,
+  );
+
+  // 9. Three states on screen, told apart by weight rather than by hue.
+  //
+  //    An edge with no direction used to be drawn at full strength in the same grey
+  //    as every other neutral edge, so an import internal to an open folder looked
+  //    like one more connection to follow and an edge unrelated to the selection
+  //    looked like the same thing. Weight separates them, and the three must stay
+  //    distinct — collapsing any two of them is the bug this check exists for.
+  failures += check(
+    "Edge weights: coloured, internal, unrelated",
+    edgeOpacity("incoming", true) === 1 &&
+      edgeOpacity("outgoing", true) === 1 &&
+      edgeOpacity(null, true) === 0.5 &&
+      edgeOpacity(null, false) === 0.22 &&
+      edgeOpacity("incoming", false) === 0.22,
+    `coloured ${edgeOpacity("incoming", true)}, internal ${edgeOpacity(null, true)}, ` +
+      `unrelated ${edgeOpacity(null, false)}`,
+  );
+
+  // And on the real graph: an open folder has all three, and internal reads stronger
+  // than unrelated, or the two are still telling the reader the same thing.
+  const graded = deriveMap(parse, fold, new Set([panel.path]));
+  const gradedLit = litItems(graded, folderItemId(panel.path));
+  const gradedAnchor = new Set(graded.rows.map((row) => row.id));
+  const gradedPanels = new Map(graded.rows.map((row) => [row.id, row.panelId]));
+  const strengths = new Set(
+    graded.edges.map((edge) => {
+      const edgeIsLit = isEdgeLit(graded, edge, gradedLit);
+      return edgeOpacity(edgeIsLit ? edgeDirection(edge, gradedAnchor, gradedPanels) : null, edgeIsLit);
+    }),
+  );
+  failures += check(
+    `${graded.edges.length} edges on one folder open`,
+    strengths.size === 3 &&
+      strengths.has(1) &&
+      strengths.has(edgeOpacity(null, true)) &&
+      strengths.has(edgeOpacity(null, false)) &&
+      edgeOpacity(null, true) > edgeOpacity(null, false),
+    `${[...strengths].sort((left, right) => right - left).join(", ")} present, full > internal > unrelated`,
   );
 
   // 8. No selection dims itself, and no selection leaves an edge bright whose

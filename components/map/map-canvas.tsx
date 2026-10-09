@@ -15,7 +15,7 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import { PANEL_HEADER_HEIGHT, PANEL_ROW_HEIGHT, type MapGraph, type MapRow } from "@/lib/graph/graph.ts";
-import { edgeDirection, isEdgeLit } from "@/lib/graph/highlight.ts";
+import { edgeDirection, edgeOpacity, isEdgeLit } from "@/lib/graph/highlight.ts";
 import { boundsOf, type PlacedBox } from "@/lib/graph/layout.ts";
 import { FileRowView, type FileFlowNode } from "./file-row";
 import { FolderNodeView, type FolderFlowNode } from "./folder-node";
@@ -340,14 +340,24 @@ function buildEdges(map: MapGraph, interaction: MapInteraction): Edge[] {
       style: {
         stroke: color,
         strokeWidth: 1 + Math.min(2, Math.log2(edge.weight + 1)),
-        // Dimmed rather than hidden. At the zoom this map opens at, an edge below
-      // about a fifth of full strength stops being a line and becomes absence,
-      // which reads as a missing edge rather than an unrelated one.
-      opacity: edgeIsLit ? 1 : 0.22,
+        opacity: edgeOpacity(direction, edgeIsLit),
       },
-      markerEnd: { type: MarkerType.ArrowClosed, width: 11, height: 11, color },
+      // Internal edges get no arrowhead. An arrow claims a direction, and an edge
+      // between two files of one folder has none to claim — which is how a
+      // relationship wholly inside a folder read as an incoming connection.
+      markerEnd:
+        direction === null
+          ? undefined
+          : { type: MarkerType.ArrowClosed, width: 11, height: 11, color },
       focusable: false,
       selectable: false,
     };
   });
 }
+
+/**
+ * Three weights, told apart by strength rather than by hue.
+ *
+ * Exported so map:select can assert the rule from a terminal rather than it being
+ * something only visible in a browser.
+ */
