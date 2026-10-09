@@ -59,10 +59,26 @@ export function walkFrom(
   let frontier: { path: string; depth: number }[] = [{ path: from, depth: 0 }];
   reached.set(from, 0);
 
+  // The files sitting on the limit, collected as the walk passes them rather than
+  // read off `frontier` afterwards. `frontier` is empty by the time the loop exits —
+  // it emptied precisely *because* it reached the limit — so reading the boundary
+  // from it afterwards finds nothing, and `filesBeyond` was always 0. A walk that
+  // stops at two levels then claimed it had stopped short of nothing while quietly
+  // dropping everything at three: depth 2 returned 61 files and depth 3 returned 75,
+  // and both said there was nothing more.
+  const boundary = new Set<string>();
+
   while (frontier.length > 0) {
     const next: { path: string; depth: number }[] = [];
     for (const { path, depth: current } of frontier) {
-      if (current >= depth) continue;
+      if (current >= depth) {
+        // One edge further than we are willing to go. The file itself is already in
+        // `reached`; what is being counted is what lies past it.
+        for (const neighbour of neighbours.get(path) ?? []) {
+          if (neighbour !== from) boundary.add(neighbour);
+        }
+        continue;
+      }
       for (const neighbour of neighbours.get(path) ?? []) {
         if (reached.has(neighbour)) continue;
         reached.set(neighbour, current + 1);
@@ -73,16 +89,11 @@ export function walkFrom(
   }
 
   reached.delete(from);
-  // Everything one edge further than the limit, so "the walk stopped here" can say
-  // how much it stopped short of rather than only that it stopped.
-  let filesBeyond = 0;
-  for (const { path, depth: current } of frontier) {
-    if (current >= depth) {
-      for (const neighbour of neighbours.get(path) ?? []) {
-        if (!reached.has(neighbour) && neighbour !== from) filesBeyond += 1;
-      }
-    }
-  }
+
+  // How much of the boundary the walk actually got to. A boundary file already in
+  // `reached` was reached by a shorter route, so it is not "beyond" in any sense the
+  // reader cares about — it is in the list above.
+  const filesBeyond = [...boundary].filter((path) => !reached.has(path)).length;
 
   const paths = [...reached]
     .map(([path, level]) => ({ path, depth: level }))

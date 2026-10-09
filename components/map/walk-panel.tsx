@@ -17,6 +17,7 @@ import { FileName } from "./path-list";
 export function WalkPanel({
   title,
   subtitle,
+  empty,
   result,
   depth,
   selected,
@@ -26,6 +27,8 @@ export function WalkPanel({
 }: {
   title: string;
   subtitle: string;
+  /** What an empty result means for this walk. The two directions are opposites. */
+  empty: string;
   result: WalkResult;
   depth: number;
   selected: string | null;
@@ -37,8 +40,14 @@ export function WalkPanel({
     return (
       <section>
         <Header title={title} subtitle={subtitle} />
+        {/*
+          `empty` rather than a sentence written here. The two walks are opposites —
+          one asks what reaches this file and the other what this file needs — so a
+          single sentence read as "nothing reaches this file" under a dependency
+          chain, which says the reverse of what an empty chain means.
+        */}
         <p className="px-3.5 py-2 text-[10.5px] leading-[15px] text-text-muted">
-          Nothing reaches this file within {depth} levels.
+          {empty} within {depth} levels.
         </p>
       </section>
     );

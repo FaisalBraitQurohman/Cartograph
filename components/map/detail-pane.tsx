@@ -407,6 +407,7 @@ function WalkResults({
     <div className="border-b border-border">
       <WalkPanel
         depth={WALK_DEPTH}
+        empty={openWalk === "blast" ? "Nothing reaches this file" : "This file needs nothing"}
         hovered={hovered}
         onHover={onHoverPath}
         onSelect={onSelectPath}

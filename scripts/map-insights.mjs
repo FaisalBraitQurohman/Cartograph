@@ -126,6 +126,8 @@ function run(parse) {
   // files behind, which is the only way to tell that the limit is real.
   const shallow = walkFrom(parse, widest.path, { outward: false, depth: 1 });
   const deeper = walkFrom(parse, widest.path, { outward: false, depth: 2 });
+  const deepest = walkFrom(parse, widest.path, { outward: false, depth: 3 });
+
   check(
     "The depth limit is real and reported",
     deeper.paths.length >= shallow.paths.length &&
@@ -133,6 +135,54 @@ function run(parse) {
       shallow.paths.every((p) => p.depth <= 1),
     `depth 1 -> ${shallow.paths.length}, depth 2 -> ${deeper.paths.length}, ` +
       `depth 2 reports ${deeper.filesBeyond} beyond`,
+  );
+
+  // `filesBeyond` was always 0, because the frontier was empty by the time it was
+  // read — and a walk that reports nothing beyond the limit looks complete. A file
+  // that is in the boundary set must be genuinely unreached, and there must be
+  // something in that set when the graph goes deeper than the limit.
+  let boundaryWrong = 0;
+  for (const depth of [1, 2]) {
+    const result = walkFrom(parse, widest.path, { outward: false, depth });
+    for (const path of result.paths) {
+      if (path.depth > depth) boundaryWrong += 1;
+    }
+  }
+
+  // Every file counted as beyond must really be unreachable within the limit, and
+  // every file reachable within limit+1 must either be in the list or counted.
+  const beyondAt2 = deeper.filesBeyond;
+  const reachableAt3 = deepest.paths.filter((p) => p.depth === 3).length;
+  const consistent =
+    beyondAt2 === reachableAt3 &&
+    deeper.truncated === (beyondAt2 > 0) &&
+    shallow.truncated === (shallow.filesBeyond > 0);
+
+  check(
+    "filesBeyond is counted, not always zero",
+    boundaryWrong === 0 && consistent && beyondAt2 > 0,
+    boundaryWrong === 0 && consistent
+      ? `depth 1 leaves ${shallow.filesBeyond}, depth 2 leaves ${beyondAt2}, and depth 3 reaches exactly ${reachableAt3} new files`
+      : `depth 2 claims ${beyondAt2} beyond but depth 3 reaches ${reachableAt3}`,
+  );
+
+  // Every file beyond the limit is reachable, just not within it. Checked by walking
+  // forwards, because "unreached" here means "not found in time", not "not there".
+  // Every file at level 3 must be genuinely three edges away, or the levels are
+  // wrong rather than merely truncated. Checked backwards from each of them: a blast
+  // radius reaches the start by following importers, so asking `reachable` to walk
+  // forwards from the start would look for the wrong edge entirely.
+  let notThreeAway = 0;
+  for (const path of deepest.paths.filter((p) => p.depth === 3)) {
+    if (reachable(parse, path.path, widest.path, 2)) notThreeAway += 1;
+    if (deeper.paths.some((p) => p.path === path.path)) notThreeAway += 1;
+  }
+  check(
+    "Files at level 3 really are three edges away",
+    notThreeAway === 0,
+    notThreeAway === 0
+      ? `${reachableAt3} files at level 3, none reachable in 2 and none already in the level 2 list`
+      : `${notThreeAway} of ${reachableAt3} are reachable in 2 or already listed`,
   );
 
   // ---- Cycles ----------------------------------------------------------------
