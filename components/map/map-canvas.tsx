@@ -354,10 +354,3 @@ function buildEdges(map: MapGraph, interaction: MapInteraction): Edge[] {
     };
   });
 }
-
-/**
- * Three weights, told apart by strength rather than by hue.
- *
- * Exported so map:select can assert the rule from a terminal rather than it being
- * something only visible in a browser.
- */
