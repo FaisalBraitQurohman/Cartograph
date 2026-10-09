@@ -14,7 +14,8 @@
     "parse:repo": "node scripts/parse-repository.mjs",
     "map:stats": "node scripts/map-stats.mjs",
     "map:select": "node scripts/map-select.mjs",
-    "map:detail": "node scripts/map-detail.mjs"
+    "map:detail": "node scripts/map-detail.mjs",
+    "map:insights": "node scripts/map-insights.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.11",

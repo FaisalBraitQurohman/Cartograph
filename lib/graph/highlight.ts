@@ -1,30 +1,61 @@
 import type { MapGraph } from "./graph.ts";
 
 /**
- * What stays at full strength while something is selected.
+ * What stays at full strength.
  *
- * The selection, the things it is connected to, and the panel either of them
- * sits in. Everything else dims, which is how "what depends on this" becomes
- * visible without a second panel for it.
+ * Two things dim the map and they are independent. A selection keeps itself, the
+ * things it is connected to, and the panel either of them sits in; everything else
+ * dims, which is how "what depends on this" becomes visible without a second panel
+ * for it. A category filter keeps the items in that category and dims the rest, which
+ * is how a reader sees where one kind of file lives without losing the folders around
+ * it.
  *
- * It is a pure function over the map rather than state in a component, so the
- * rule can be checked from a terminal instead of by looking at it.
+ * When both are active they intersect: an item has to be in the category *and*
+ * connected to the selection to stay bright. Any other rule would make one of them
+ * win, and which one would be a rule nobody chose.
+ *
+ * It is a pure function over the map rather than state in a component, so the rule
+ * can be checked from a terminal instead of by looking at it.
  */
-export function litItems(map: MapGraph, selection: string | null): Set<string> | null {
-  if (!selection) return null;
+export function litItems(
+  map: MapGraph,
+  selection: string | null,
+  filter: ReadonlySet<string> | null = null,
+): Set<string> | null {
+  if (!selection && filter === null) return null;
 
+  // The selection's neighbourhood, worked out exactly as it was before a filter
+  // existed, so putting a category on the pane cannot change what selecting a file
+  // means.
+  const nearSelection = selection === null ? null : neighbourhoodOf(map, selection);
+
+  const kept = new Set<string>();
+  for (const item of map.itemIds) {
+    const passesSelection = nearSelection === null || nearSelection.has(item);
+    const passesFilter = filter === null || filter.has(item);
+    if (passesSelection && passesFilter) kept.add(item);
+  }
+
+  return kept;
+}
+
+/**
+ * The selection, everything connected to it, and the panels either of them sits in.
+ *
+ * The selection is whatever the reader pointed at, which is not always one drawn
+ * object. An open panel is its rows: no edge ever terminates on a panel, they all
+ * land on the rows inside it, so asking only for edges touching the panel's own id
+ * finds none at all. That is how selecting an open folder found zero neighbours and
+ * dimmed its whole fan-in — the box's incoming edges went grey the moment it was
+ * opened, which is exactly when they are being read.
+ *
+ * So the neighbourhood is taken over the panel *and* its rows together. One set, one
+ * scan: whatever the reader clicked, the answer is the same set of neighbours
+ * whichever way the same relationship is drawn.
+ */
+function neighbourhoodOf(map: MapGraph, selection: string): Set<string> {
   const kept = new Set<string>([selection]);
 
-  // The selection is whatever the reader pointed at, which is not always one drawn
-  // object. An open panel is its rows: no edge ever terminates on a panel, they all
-  // land on the rows inside it, so asking only for edges touching the panel's own id
-  // finds none at all. That is how selecting an open folder found zero neighbours
-  // and dimmed its whole fan-in — the box's incoming edges went grey the moment it
-  // was opened, which is exactly when they are being read.
-  //
-  // So the neighbourhood is taken over the panel *and* its rows together. One set,
-  // one scan: whatever the reader clicked, the answer is the same set of
-  // neighbours whichever way the same relationship is drawn.
   const subject = new Set<string>([selection]);
   for (const row of map.rows) {
     if (row.panelId === selection) subject.add(row.id);
@@ -35,16 +66,15 @@ export function litItems(map: MapGraph, selection: string | null): Set<string> |
     if (subject.has(edge.target)) kept.add(edge.source);
   }
 
-  // A panel and the rows inside it are one thing, so whichever of them is
-  // selected, all of them stay bright. A selected row keeps its panel lit,
-  // because a greyed-out box would hide the very edges being drawn into it. A
-  // selected panel keeps its rows lit, because they are what it is showing, and
-  // dimming them would leave an open panel looking broken.
+  // A panel and the rows inside it are one thing, so whichever of them is selected,
+  // all of them stay bright. A selected row keeps its panel lit, because a greyed-out
+  // box would hide the very edges being drawn into it. A selected panel keeps its
+  // rows lit, because they are what it is showing, and dimming them would leave an
+  // open panel looking broken.
   //
-  // Both directions have to be driven explicitly. Reading only "which panel does
-  // this item sit in" finds nothing when the item is the panel itself, which is
-  // how a selected panel ended up dimming every row it had just been opened to
-  // show.
+  // Both directions have to be driven explicitly. Reading only "which panel does this
+  // item sit in" finds nothing when the item is the panel itself, which is how a
+  // selected panel ended up dimming every row it had just been opened to show.
   const rowsOfPanel = new Map<string, string[]>();
   for (const row of map.rows) {
     const siblings = rowsOfPanel.get(row.panelId);
@@ -77,9 +107,9 @@ export function litItems(map: MapGraph, selection: string | null): Set<string> |
 }
 
 /**
- * Whether an edge stays bright. It does only when both of the things it
- * connects are still bright, so a dimmed end takes its edges with it rather
- * than leaving a line running to something nobody can see.
+ * Whether an edge stays bright. It does only when both of the things it connects
+ * are still bright, so a dimmed end takes its edges with it rather than leaving a
+ * line running to something nobody can see.
  */
 export function isEdgeLit(
   map: MapGraph,
@@ -152,6 +182,7 @@ function isInsideOneFolder(
   if (targetPanel !== undefined) return targetPanel === edge.source;
   return false;
 }
+
 /**
  * How strongly an edge is drawn, given what it means right now.
  *

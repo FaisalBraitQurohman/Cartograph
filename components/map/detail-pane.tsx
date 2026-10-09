@@ -7,6 +7,9 @@ import type { MapGraph } from "@/lib/graph/graph.ts";
 import type { RepositoryParseResult } from "@/parser/types.mts";
 import { PathList, FileName } from "./path-list";
 import { kindFill } from "./swatches";
+import { WalkPanel } from "./walk-panel";
+import { walksFor, WALK_DEPTH } from "@/lib/graph/insights.ts";
+import { InsightsPanel } from "./insights-panel";
 
 /**
  * The right-hand pane.
@@ -45,11 +48,22 @@ export function DetailPane({
   onHoverPath: (path: string | null) => void;
 }) {
   const [tab, setTab] = useState<Tab>("structure");
+  // Which walk is open, or none. The reader opens one, reads it, and closes it —
+  // and it is not a tab, because two walks open at once is not a comparison anybody
+  // makes, it is one list on top of another.
+  const [walk, setWalk] = useState<"blast" | "chain" | null>(null);
 
   const detail = useMemo(
     () => describeDetail(parse, categories, map, selection),
     [parse, categories, map, selection],
   );
+
+  // The walk closes itself when the selection moves to something that has none. A
+  // file's blast radius is not a folder's, and leaving the last file's list on screen
+  // under a new heading is the worst of both — so this is not reset on click, it is
+  // derived: a walk is only open while the thing it was opened for still is.
+  const walkPath = detail.kind === "file" ? detail.path : null;
+  const openWalk = walk !== null && walkPath !== null ? walk : null;
 
   return (
     <aside aria-label="Details" className="flex h-full w-[320px] shrink-0 flex-col border-l border-border">
@@ -66,7 +80,14 @@ export function DetailPane({
       */}
       <div aria-label={tab === "structure" ? "Structure" : "Explanation"} className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
         {tab === "structure" ? (
-          <Structure detail={detail} hovered={hovered} onHoverPath={onHoverPath} onSelectPath={onSelectPath} />
+          <Structure
+            detail={detail}
+            hovered={hovered}
+            onHoverPath={onHoverPath}
+            onSelectPath={onSelectPath}
+            openWalk={openWalk}
+            setWalk={setWalk}
+          />
         ) : (
           <ExplanationEmpty />
         )}
@@ -96,35 +117,62 @@ function Structure({
   hovered,
   onHoverPath,
   onSelectPath,
+  openWalk,
+  setWalk,
 }: {
   detail: Detail;
   hovered: string | null;
   onHoverPath: (path: string | null) => void;
   onSelectPath: (path: string) => void;
+  openWalk: "blast" | "chain" | null;
+  setWalk: (walk: "blast" | "chain" | null) => void;
 }) {
   if (detail.kind === "repository") {
-    return <RepositoryStructure detail={detail} hovered={hovered} onHoverPath={onHoverPath} onSelectPath={onSelectPath} />;
+    return (
+      <RepositoryStructure
+        detail={detail}
+        hovered={hovered}
+        onHoverPath={onHoverPath}
+        onSelectPath={onSelectPath}
+        parse={detail.parse}
+      />
+    );
   }
   if (detail.kind === "folder") return <FolderStructure detail={detail} />;
   return (
-    <FileStructure detail={detail} hovered={hovered} onHoverPath={onHoverPath} onSelectPath={onSelectPath} />
+    <FileStructure
+      detail={detail}
+      hovered={hovered}
+      onHoverPath={onHoverPath}
+      onSelectPath={onSelectPath}
+      openWalk={openWalk}
+      setWalk={setWalk}
+    />
   );
 }
 
 /**
  * The pane with nothing selected: what this repository is, what the rest of it
- * leans on, and where reading starts.
+ * leans on, and where reading starts — and the insights, collapsed.
+ *
+ * The insights sit at the bottom and start closed because this product explains a
+ * codebase and does not grade one. Opening the pane should answer "what is this
+ * repository", not present a list of things someone did not ask about. Nothing here
+ * is a score, and no insight has a severity; they are four facts about the edge
+ * list, and a reader goes looking for them when they want them.
  */
 function RepositoryStructure({
   detail,
   hovered,
   onHoverPath,
   onSelectPath,
+  parse,
 }: {
   detail: RepositoryDetail;
   hovered: string | null;
   onHoverPath: (path: string | null) => void;
   onSelectPath: (path: string) => void;
+  parse: RepositoryParseResult;
 }) {
   return (
     <div className="pb-6">
@@ -180,7 +228,7 @@ function RepositoryStructure({
 
       <Section
         heading="Nothing imports these"
-        note={`${shown(detail.orphanTotal, detail.orphans.length)} of ${detail.orphanTotal} files nothing imports`}
+        note={`${shown(detail.orphanTotal, detail.orphans.length)} of ${detail.orphanTotal} files`}
       >
         <ol className="min-w-0">
           {detail.orphans.map((file) => (
@@ -194,6 +242,12 @@ function RepositoryStructure({
             />
           ))}
         </ol>
+        {/* Why the list is shorter than "nothing imports" sounds like it should be. */}
+        <p className="border-t border-border px-3.5 py-2 text-[10px] leading-[15px] text-text-muted">
+          {detail.reachedByConvention} more files that nothing imports are reached by
+          something other than an import — a test runner, a build tool, a framework.
+          Those are counted under Insights below rather than listed here.
+        </p>
       </Section>
 
       {/*
@@ -209,6 +263,14 @@ function RepositoryStructure({
         skipped by the parser. {detail.externalImportCount} imports point outside the repository,{" "}
         {detail.unresolvedImportCount} could not be resolved.
       </p>
+
+      {/*
+        The insights, last and closed. They are the only findings this tool offers
+        and they are the least important thing on the pane — the summary above is
+        what somebody opening an unfamiliar repository needs, and a list of findings
+        in front of it would invert that.
+      */}
+      <InsightsPanel hovered={hovered} onHover={onHoverPath} onSelect={onSelectPath} parse={parse} />
     </div>
   );
 }
@@ -258,16 +320,123 @@ function RankedRow({
   );
 }
 
-function FileStructure({
+/**
+ * The two walk buttons, and the walk that one of them opens.
+ *
+ * They sit under the three figures rather than beside them because they are a
+ * different kind of answer: the figures are what this file is, and these are two
+ * questions about it that need a list rather than a number.
+ */
+function WalkButtons({
+  detail,
+  onToggle,
+  openWalk,
+}: {
+  detail: Extract<Detail, { kind: "file" }>;
+  onToggle: (walk: "blast" | "chain" | null) => void;
+  openWalk: "blast" | "chain" | null;
+}) {
+  const walks = walksFor(detail.parse, detail.path);
+
+  return (
+    <>
+      <div className="flex gap-px border-b border-border bg-border text-[10px]">
+        <WalkButton
+          figure={walks.blast.paths.length}
+          chosen={openWalk === "blast"}
+          label="Blast radius"
+          onClick={() => onToggle(openWalk === "blast" ? null : "blast")}
+          title="Everything that reaches this file, following imports backwards."
+        />
+        <WalkButton
+          figure={walks.chain.paths.length}
+          chosen={openWalk === "chain"}
+          label="Dependency chain"
+          onClick={() => onToggle(openWalk === "chain" ? null : "chain")}
+          title="Everything this file needs, following imports forwards."
+        />
+      </div>
+    </>
+  );
+}
+
+function WalkButton({
+  chosen,
+  figure,
+  label,
+  onClick,
+  title,
+}: {
+  chosen: boolean;
+  figure: number;
+  label: string;
+  onClick: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      aria-expanded={chosen}
+      className={`flex flex-1 cursor-pointer flex-col items-start gap-0.5 px-3.5 py-2 text-left transition-colors ${
+        chosen ? "bg-accent/10" : "bg-surface hover:bg-surface-raised"
+      }`}
+      onClick={onClick}
+      title={title}
+      type="button"
+    >
+      <span className="text-[16px] leading-5 tabular-nums text-text">{figure}</span>
+      <span className="text-[9.5px] leading-3 text-text-muted">{label}</span>
+    </button>
+  );
+}
+
+function WalkResults({
   detail,
   hovered,
   onHoverPath,
   onSelectPath,
+  openWalk,
 }: {
   detail: Extract<Detail, { kind: "file" }>;
   hovered: string | null;
   onHoverPath: (path: string | null) => void;
   onSelectPath: (path: string) => void;
+  openWalk: "blast" | "chain";
+}) {
+  const walks = walksFor(detail.parse, detail.path);
+  return (
+    <div className="border-b border-border">
+      <WalkPanel
+        depth={WALK_DEPTH}
+        hovered={hovered}
+        onHover={onHoverPath}
+        onSelect={onSelectPath}
+        result={walks[openWalk]}
+        selected={detail.path}
+        subtitle={
+          openWalk === "blast"
+            ? `Files that reach this one, ${WALK_DEPTH} levels back.`
+            : `Files this one needs, ${WALK_DEPTH} levels forward.`
+        }
+        title={openWalk === "blast" ? "Breaks if this changes" : "Needs to work"}
+      />
+    </div>
+  );
+}
+
+function FileStructure({
+  detail,
+  hovered,
+  onHoverPath,
+  onSelectPath,
+  openWalk,
+  setWalk,
+}: {
+  detail: Extract<Detail, { kind: "file" }>;
+  hovered: string | null;
+  onHoverPath: (path: string | null) => void;
+  onSelectPath: (path: string) => void;
+  openWalk: "blast" | "chain" | null;
+  setWalk: (walk: "blast" | "chain" | null) => void;
 }) {
   return (
     <div className="pb-6">
@@ -289,6 +458,25 @@ function FileStructure({
         <Cell label="depends on" value={detail.imports.length} tone="outgoing" />
         <Cell label="depended on" value={detail.importedBy.length} tone="incoming" />
       </dl>
+
+      <WalkButtons detail={detail} onToggle={setWalk} openWalk={openWalk} />
+
+      {/*
+        The walk is computed on render rather than on click, and the reason is the
+        depth. Whether the walk stopped short is part of what it says, and that
+        number cannot be known until the walk has run. Computing it here means the
+        button is a disclosure over data already in hand — no spinner, no request,
+        and the list is right on the frame it appears.
+      */}
+      {openWalk ? (
+        <WalkResults
+          detail={detail}
+          hovered={hovered}
+          onHoverPath={onHoverPath}
+          onSelectPath={onSelectPath}
+          openWalk={openWalk}
+        />
+      ) : null}
 
       {/*
         The counts come off the arrays rendered underneath them, in the same

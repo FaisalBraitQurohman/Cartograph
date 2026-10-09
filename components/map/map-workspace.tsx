@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { RepositoryParseResult } from "@/parser/types.mts";
-import { describeCategories, type CategorySet } from "@/lib/graph/categories.ts";
+import { bucketOf, describeCategories, type CategorySet } from "@/lib/graph/categories.ts";
 import { foldFolders } from "@/lib/graph/fold.ts";
 import { deriveMap, PANEL_VISIBLE_ROWS, fileItemId, folderPathOf } from "@/lib/graph/graph.ts";
 import { litItems } from "@/lib/graph/highlight.ts";
@@ -31,6 +31,9 @@ export function MapWorkspace({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [selection, setSelection] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  // The category the rail is dimming to, or null. Session state, not saved: it is
+  // how the map is being read right now, not a property of the repository.
+  const [category, setCategory] = useState<string | null>(null);
   // How far each open panel is scrolled, by folder path. Cleared when a folder
   // closes, so reopening it starts at the top rather than where it was left.
   const [scrolled, setScrolled] = useState<ReadonlyMap<string, number>>(() => new Map());
@@ -59,12 +62,48 @@ export function MapWorkspace({
   const seats = useMemo(() => seatFolders(parse, fold), [parse, fold]);
 
   const map = useMemo(
-    () => deriveMap(parse, fold, expanded, scrolled),
-    [parse, fold, expanded, scrolled],
+    () => deriveMap(parse, fold, expanded, scrolled, categorySet.depth),
+    [parse, fold, expanded, scrolled, categorySet.depth],
   );
   const placed = useMemo(() => seatIn(seats, map.folders, moved), [seats, map, moved]);
 
-  const lit = useMemo(() => litItems(map, selection), [map, selection]);
+  /**
+   * Which drawn items are in the active category.
+   *
+   * A category is a bucket of folders, and a drawn item is a folder box or a file
+   * row — so the two have to be matched by what the file is rather than by id. A
+   * row's path goes back through the same bucket rule the rail was built from, which
+   * is why that rule is a function both of them can call rather than a string each
+   * one builds.
+   */
+  const categoryFilter = useMemo(() => {
+    if (category === null) return null;
+
+    // The bucket each file belongs to, taken from the parse rather than rebuilt
+    // from the path. The parser already decided what folder each file sits in, and
+    // deriving it from the string here would be a second answer to a question the
+    // parse has already answered.
+    const bucketOfFile = new Map(parse.files.map((file) => [file.path, bucketOf(file.folder, categorySet.depth)]));
+    const isIn = (path: string): boolean => bucketOfFile.get(path) === category;
+
+    const inCategory = new Set<string>();
+    for (const folder of map.folders) {
+      const files = fold.nodes.find((node) => node.id === folderPathOf(folder.id))?.files ?? [];
+      // A folder box is kept when any file it holds is in the category, rather than
+      // only when all of them are. Removing a box that holds one relevant file
+      // would remove the reader's only route to it.
+      if (files.some(isIn)) inCategory.add(folder.id);
+    }
+    for (const row of map.rows) {
+      if (isIn(row.path)) inCategory.add(row.id);
+    }
+    return inCategory;
+  }, [category, categorySet.depth, fold, map.folders, map.rows, parse]);
+
+  const lit = useMemo(
+    () => litItems(map, selection, categoryFilter),
+    [map, selection, categoryFilter],
+  );
 
   /**
    * The item a hovered file path is drawn as.
@@ -204,18 +243,21 @@ export function MapWorkspace({
       toggleFolder,
       selectItem: setSelection,
       selectPath,
+      category,
       hover,
       scrollPanel,
       moveNode,
     }),
-    [selection, lit, hovered, highlightOf, toggleFolder, selectPath, hover, scrollPanel, moveNode],
+    [selection, lit, hovered, category, highlightOf, toggleFolder, selectPath, hover, scrollPanel, moveNode],
   );
 
   return (
     <div className="flex h-full min-h-0 bg-surface">
       <FileRail
+        active={category}
         categories={categorySet.categories}
         fileCount={parse.summary.filesParsed}
+        onSelect={setCategory}
       />
 
       {/* h-full as well as flex-1. `flex-1` sets the width but leaves the height

@@ -1,5 +1,6 @@
 import type { ParsedFile, RepositoryParseResult } from "@/parser/types.mts";
 import { bucketOf, categoryLabel, countUnplaced, ROOT_BUCKET, type CategorySet } from "./categories.ts";
+import { entryPointRuleFor } from "./entry-points.ts";
 import { detectFrameworks, type DetectedFramework } from "./framework.ts";
 import type { MapGraph } from "./graph.ts";
 
@@ -39,6 +40,14 @@ export interface FileSummary {
 export interface RepositoryDetail {
   kind: "repository";
   name: string;
+  /**
+   * The parse this repository was described from, for the insights panel.
+   *
+   * The same reason a file carries its parse: the insights are arithmetic over the
+   * edge list, and a pane that had to be handed the parse separately is a pane that
+   * can be handed a different one.
+   */
+  parse: RepositoryParseResult;
   frameworks: DetectedFramework[];
   fileCount: number;
   /** Files discovery found but parsing did not take, with coverage saying why. */
@@ -76,9 +85,15 @@ export interface RepositoryDetail {
    */
   mostImported: FileSummary[];
   mostImportedTotal: number;
-  /** Files nothing imports at all, where reading starts. */
+  /** Files nothing imports and no convention reaches either, where reading starts. */
   orphans: FileSummary[];
   orphanTotal: number;
+  /**
+   * Files nothing imports that a convention does reach — tests, configs, entry
+   * points. Reported as a count so the two lists reconcile and so the size of the
+   * convention's reach is visible rather than assumed.
+   */
+  reachedByConvention: number;
 }
 
 export interface FileDetail {
@@ -87,6 +102,14 @@ export interface FileDetail {
   folder: string;
   language: ParsedFile["language"];
   lines: number;
+  /**
+   * The parse this file was described from.
+   *
+   * Carried rather than passed alongside, because the two walks need the edge list
+   * and threading it through every component as a second prop is how one of them
+   * ends up describing a different repository than the pane above it.
+   */
+  parse: RepositoryParseResult;
   /** The bucket the file sits in, which is the category it is shown under. */
   category: { id: string; label: string; swatch: number };
   /** Files this one imports, deduplicated, sorted. */
@@ -159,14 +182,28 @@ export function describeRepository(parse: RepositoryParseResult, categories: Cat
     .filter((summary) => summary.fanIn > 0)
     .sort(byFanInThenPath);
 
+  // Only files no convention reaches. A test, a config file and a page are
+  // imported by nothing and are not orphans — they are reached by a runner, a build
+  // tool and a framework — and listing them here would contradict the insight panel
+  // below, which draws the same line. The count of what was set aside is reported
+  // so the two lists can be reconciled.
   const orphans = parse.files
     .filter((file) => (importers.get(file.path)?.size ?? 0) === 0)
+    .filter((file) => entryPointRuleFor(file) === null)
     .map(summaryOf)
     .sort(byPath);
+
+  let reachedByConvention = 0;
+  for (const file of parse.files) {
+    if ((importers.get(file.path)?.size ?? 0) === 0 && entryPointRuleFor(file) !== null) {
+      reachedByConvention += 1;
+    }
+  }
 
   return {
     kind: "repository",
     name: repositoryNameOf(parse.repositoryPath),
+    parse,
     frameworks: detectFrameworks(parse),
     fileCount: parse.summary.filesParsed,
     skippedCount: parse.summary.filesSkipped,
@@ -179,6 +216,7 @@ export function describeRepository(parse: RepositoryParseResult, categories: Cat
     mostImportedTotal: ranked.length,
     orphans: orphans.slice(0, TOP_ORPHANS),
     orphanTotal: orphans.length,
+    reachedByConvention,
   };
 }
 
@@ -212,6 +250,7 @@ export function describeFile(
     folder: file.folder,
     language: file.language,
     lines: file.lines,
+    parse,
     category: {
       id: categoryId,
       label: categoryLabel(categoryId),
