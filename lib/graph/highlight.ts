@@ -1,0 +1,183 @@
+import type { MapGraph } from "./graph.ts";
+
+/**
+ * What stays at full strength while something is selected.
+ *
+ * The selection, the things it is connected to, and the panel either of them
+ * sits in. Everything else dims, which is how "what depends on this" becomes
+ * visible without a second panel for it.
+ *
+ * It is a pure function over the map rather than state in a component, so the
+ * rule can be checked from a terminal instead of by looking at it.
+ */
+export function litItems(map: MapGraph, selection: string | null): Set<string> | null {
+  if (!selection) return null;
+
+  const kept = new Set<string>([selection]);
+
+  // The selection is whatever the reader pointed at, which is not always one drawn
+  // object. An open panel is its rows: no edge ever terminates on a panel, they all
+  // land on the rows inside it, so asking only for edges touching the panel's own id
+  // finds none at all. That is how selecting an open folder found zero neighbours
+  // and dimmed its whole fan-in — the box's incoming edges went grey the moment it
+  // was opened, which is exactly when they are being read.
+  //
+  // So the neighbourhood is taken over the panel *and* its rows together. One set,
+  // one scan: whatever the reader clicked, the answer is the same set of
+  // neighbours whichever way the same relationship is drawn.
+  const subject = new Set<string>([selection]);
+  for (const row of map.rows) {
+    if (row.panelId === selection) subject.add(row.id);
+  }
+
+  for (const edge of map.edges) {
+    if (subject.has(edge.source)) kept.add(edge.target);
+    if (subject.has(edge.target)) kept.add(edge.source);
+  }
+
+  // A panel and the rows inside it are one thing, so whichever of them is
+  // selected, all of them stay bright. A selected row keeps its panel lit,
+  // because a greyed-out box would hide the very edges being drawn into it. A
+  // selected panel keeps its rows lit, because they are what it is showing, and
+  // dimming them would leave an open panel looking broken.
+  //
+  // Both directions have to be driven explicitly. Reading only "which panel does
+  // this item sit in" finds nothing when the item is the panel itself, which is
+  // how a selected panel ended up dimming every row it had just been opened to
+  // show.
+  const rowsOfPanel = new Map<string, string[]>();
+  for (const row of map.rows) {
+    const siblings = rowsOfPanel.get(row.panelId);
+    if (siblings) siblings.push(row.id);
+    else rowsOfPanel.set(row.panelId, [row.id]);
+  }
+
+  for (const panel of rowsOfPanel.keys()) {
+    if (!kept.has(panel)) continue;
+    for (const row of rowsOfPanel.get(panel) ?? []) kept.add(row);
+  }
+
+  for (const row of map.rows) {
+    if (kept.has(row.id)) kept.add(row.panelId);
+  }
+
+  // Every open panel stays bright, not only the one holding the selection.
+  //
+  // A folder someone has opened is being read; dimming it because the selection
+  // happens to be in a different folder made two equally open folders look like
+  // different states, and the one that dimmed was the one with colour to lose.
+  // Its edges were still drawn, just at a fifth of the strength, so it read as
+  // unconnected rather than as unselected.
+  for (const panel of rowsOfPanel.keys()) {
+    kept.add(panel);
+    for (const row of rowsOfPanel.get(panel) ?? []) kept.add(row);
+  }
+
+  return kept;
+}
+
+/**
+ * Whether an edge stays bright. It does only when both of the things it
+ * connects are still bright, so a dimmed end takes its edges with it rather
+ * than leaving a line running to something nobody can see.
+ */
+export function isEdgeLit(
+  map: MapGraph,
+  edge: { source: string; target: string },
+  lit: ReadonlySet<string> | null,
+): boolean {
+  if (lit === null) return true;
+  return lit.has(edge.source) && lit.has(edge.target);
+}
+
+/**
+ * Which way an edge runs, relative to whatever is being looked at.
+ *
+ * `anchor` is the thing the reader is asking about, which is the selection when
+ * there is one and otherwise every row an open panel is showing. An edge into
+ * the anchor is incoming and an edge out of it is outgoing; an edge that does
+ * not touch the anchor is about something else and has no direction to report.
+ *
+ * Anchoring to open rows rather than to the panel node is what makes a folder
+ * coloured the moment it opens. No edge ever terminates on a panel — they all
+ * land on the rows inside it — so anchoring to the panel would leave every one
+ * of them without a direction and the whole folder would read as unconnected.
+ *
+ * `panelOf` maps a drawn row to the panel holding it, and it is what separates an
+ * edge internal to one folder from one running between two. That distinction
+ * cannot be read off the anchor: the anchor holds every row of *every* open
+ * folder, so "both ends are in it" means "both ends are in some open folder" and
+ * said so about edges between two different folders as well. One folder open left
+ * 0 of its 77 edges coloured and all 24 open left 0 of 414. Membership says which
+ * folder an edge is in; this does.
+ */
+export function edgeDirection(
+  edge: { source: string; target: string },
+  anchor: ReadonlySet<string> | null,
+  panelOf?: ReadonlyMap<string, string>,
+): "incoming" | "outgoing" | null {
+  if (anchor === null) return null;
+  // Both ends inside one and the same folder means nothing about how anything gets
+  // into it or out of it. Reporting "incoming" for an edge between two files of the
+  // same open folder drew a green arrow into the panel for a relationship wholly
+  // internal to it — and because a closed box hides exactly those edges, opening
+  // the folder appeared to reverse the direction of an arrow that had meant
+  // something else entirely.
+  if (panelOf && isInsideOneFolder(edge, panelOf)) return null;
+  if (anchor.has(edge.target)) return "incoming";
+  if (anchor.has(edge.source)) return "outgoing";
+  return null;
+}
+
+/**
+ * Whether both ends of an edge are inside one and the same folder.
+ *
+ * Three shapes count, and all of them are internal. Two visible rows of one panel,
+ * which is an import between two files of the same folder. A row whose other end is
+ * its own panel, which happens when the target is a file the scroll window is not
+ * showing and the panel stands in for it. And two rows of the same panel that reach
+ * each other through neither of those, which is the first case again.
+ */
+function isInsideOneFolder(
+  edge: { source: string; target: string },
+  panelOf: ReadonlyMap<string, string>,
+): boolean {
+  const sourcePanel = panelOf.get(edge.source);
+  const targetPanel = panelOf.get(edge.target);
+
+  if (sourcePanel !== undefined && targetPanel !== undefined) return sourcePanel === targetPanel;
+  // One end is a drawn row, the other is the box standing in for a file that is not
+  // currently on screen.
+  if (sourcePanel !== undefined) return sourcePanel === edge.target;
+  if (targetPanel !== undefined) return targetPanel === edge.source;
+  return false;
+}
+/**
+ * How strongly an edge is drawn, given what it means right now.
+ *
+ * Three weights rather than three colours. Colour on this map means direction, and
+ * an edge with no direction has no colour to spend — a third hue would claim
+ * something the edge does not know. What separates the three is how much of the map
+ * each is allowed to occupy.
+ *
+ * Full: an edge flowing into or out of what is being read. That is the answer, and
+ * it competes with nothing.
+ *
+ * Half: internal to a folder that is open. A real import between two files the
+ * reader has on screen, so it stays legible — but with no direction, and at the same
+ * weight as a coloured edge it read as one more thing to follow. This was the state
+ * that had no distinction: it was drawn full strength in the same grey as everything
+ * else, so it looked like an edge to follow and looked identical to an edge unrelated
+ * to the selection.
+ *
+ * A fifth: unrelated to the selection. Below about a fifth of full strength an edge
+ * stops being a line and becomes absence, which reads as a missing edge rather than
+ * an unrelated one, so this is the floor rather than something lower.
+ *
+ * Lives here, next to `edgeDirection`, because it is the other half of the same
+ * answer and the checks import both together.
+ */
+export function edgeOpacity(direction: "incoming" | "outgoing" | null, edgeIsLit: boolean): number {
+  if (!edgeIsLit) return 0.22;
+  return direction === null ? 0.5 : 1;
+}
