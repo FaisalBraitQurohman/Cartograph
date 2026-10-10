@@ -1,14 +1,6 @@
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.18"
   }
@@ -23,6 +15,9 @@ export type Database = {
           id: string
           organization_id: string
           project_id: string
+          stage: string | null
+          stage_at: string | null
+          stage_message: string | null
           status: string
         }
         Insert: {
@@ -33,6 +28,9 @@ export type Database = {
           id?: string
           organization_id: string
           project_id: string
+          stage?: string | null
+          stage_at?: string | null
+          stage_message?: string | null
           status: string
         }
         Update: {
@@ -43,6 +41,9 @@ export type Database = {
           id?: string
           organization_id?: string
           project_id?: string
+          stage?: string | null
+          stage_at?: string | null
+          stage_message?: string | null
           status?: string
         }
         Relationships: [
@@ -59,7 +60,70 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          }
+        ]
+      }
+      coverage: {
+        Row: {
+          analysis_id: string
+          created_at: string
+          distinct_folders: number
+          files_found: number
+          files_parsed: number
+          files_skipped: number
+          imports_excluded: number
+          imports_outside: number
+          imports_resolved: number
+          imports_total: number
+          imports_unresolved: number
+          organization_id: string
+          resolved_fraction: number | null
+        }
+        Insert: {
+          analysis_id: string
+          created_at?: string
+          distinct_folders?: number
+          files_found?: number
+          files_parsed?: number
+          files_skipped?: number
+          imports_excluded?: number
+          imports_outside?: number
+          imports_resolved?: number
+          imports_total?: number
+          imports_unresolved?: number
+          organization_id: string
+          resolved_fraction?: never
+        }
+        Update: {
+          analysis_id?: string
+          created_at?: string
+          distinct_folders?: number
+          files_found?: number
+          files_parsed?: number
+          files_skipped?: number
+          imports_excluded?: number
+          imports_outside?: number
+          imports_resolved?: number
+          imports_total?: number
+          imports_unresolved?: number
+          organization_id?: string
+          resolved_fraction?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coverage_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: true
+            referencedRelation: "analyses"
+            referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "coverage_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          }
         ]
       }
       edges: {
@@ -69,6 +133,7 @@ export type Database = {
           from_file_id: string
           id: string
           kind: string
+          line: number | null
           organization_id: string
           specifier: string | null
           to_file_id: string
@@ -79,6 +144,7 @@ export type Database = {
           from_file_id: string
           id?: string
           kind: string
+          line?: number | null
           organization_id: string
           specifier?: string | null
           to_file_id: string
@@ -89,6 +155,7 @@ export type Database = {
           from_file_id?: string
           id?: string
           kind?: string
+          line?: number | null
           organization_id?: string
           specifier?: string | null
           to_file_id?: string
@@ -121,7 +188,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "files"
             referencedColumns: ["id"]
-          },
+          }
         ]
       }
       explanations: {
@@ -173,7 +240,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
-          },
+          }
         ]
       }
       file_roles: {
@@ -225,7 +292,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
-          },
+          }
         ]
       }
       files: {
@@ -234,30 +301,48 @@ export type Database = {
           created_at: string
           fan_in: number
           fan_out: number
+          folder: string
           id: string
+          is_entry_point: boolean
+          is_external_module: boolean
           language: string | null
+          lines: number | null
+          module_id: string | null
           organization_id: string
           path: string
+          sha256: string | null
         }
         Insert: {
           analysis_id: string
           created_at?: string
           fan_in?: number
           fan_out?: number
+          folder: string
           id?: string
+          is_entry_point?: boolean
+          is_external_module?: boolean
           language?: string | null
+          lines?: number | null
+          module_id?: string | null
           organization_id: string
           path: string
+          sha256?: string | null
         }
         Update: {
           analysis_id?: string
           created_at?: string
           fan_in?: number
           fan_out?: number
+          folder?: string
           id?: string
+          is_entry_point?: boolean
+          is_external_module?: boolean
           language?: string | null
+          lines?: number | null
+          module_id?: string | null
           organization_id?: string
           path?: string
+          sha256?: string | null
         }
         Relationships: [
           {
@@ -273,7 +358,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
-          },
+          }
         ]
       }
       insights: {
@@ -328,7 +413,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
-          },
+          }
         ]
       }
       organizations: {
@@ -378,7 +463,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
-          },
+          }
         ]
       }
       routes: {
@@ -430,7 +515,106 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          }
+        ]
+      }
+      skipped_files: {
+        Row: {
+          analysis_id: string
+          created_at: string
+          entry_kind: string
+          id: number
+          organization_id: string
+          path: string
+          reason: string
+        }
+        Insert: {
+          analysis_id: string
+          created_at?: string
+          entry_kind: string
+          id?: never
+          organization_id: string
+          path: string
+          reason: string
+        }
+        Update: {
+          analysis_id?: string
+          created_at?: string
+          entry_kind?: string
+          id?: never
+          organization_id?: string
+          path?: string
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "skipped_files_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "analyses"
+            referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "skipped_files_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      unresolved_imports: {
+        Row: {
+          analysis_id: string
+          created_at: string
+          file_path: string
+          id: number
+          import_kind: string
+          kind: string
+          line: number
+          organization_id: string
+          reason: string
+          specifier: string
+        }
+        Insert: {
+          analysis_id: string
+          created_at?: string
+          file_path: string
+          id?: never
+          import_kind: string
+          kind: string
+          line: number
+          organization_id: string
+          reason: string
+          specifier: string
+        }
+        Update: {
+          analysis_id?: string
+          created_at?: string
+          file_path?: string
+          id?: never
+          import_kind?: string
+          kind?: string
+          line?: number
+          organization_id?: string
+          reason?: string
+          specifier?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unresolved_imports_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unresolved_imports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          }
         ]
       }
     }

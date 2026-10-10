@@ -1,5 +1,10 @@
+import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { listAnalyses } from "@/lib/analyses";
+import { runFreshness, STALE_AFTER_MINUTES } from "@/lib/analysis-freshness";
+import { NewAnalysisForm } from "@/components/new-analysis-form";
+import { startAnalysis } from "@/app/workspace/actions";
+import type { Stage } from "@/lib/pipeline/stage.mts";
 
 /**
  * The workspace.
@@ -16,8 +21,13 @@ import { listAnalyses } from "@/lib/analyses";
  * when the page under it changes. Signed-out visitors are redirected to sign-in
  * before this renders.
  */
-export default async function WorkspacePage() {
+export default async function WorkspacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { sessionClaims } = await auth.protect();
+  const { error } = await searchParams;
 
   // Read straight off the token — no round trip to the identity provider for
   // anything that decides access. This is the claim the database policy reads;
@@ -67,6 +77,10 @@ export default async function WorkspacePage() {
             <span className="font-medium text-text">{organizationName}</span>
           </div>
         </div>
+
+        <section className="mt-8">
+          <NewAnalysisForm action={startAnalysis} error={error ?? null} />
+        </section>
 
         <dl className="metric-grid mt-9">
           <Metric label="Total runs" value={analyses.length} />
@@ -132,17 +146,40 @@ export default async function WorkspacePage() {
 type Analysis = Awaited<ReturnType<typeof listAnalyses>>[number];
 
 function AnalysisRow({ analysis }: { analysis: Analysis }) {
+  const freshness = runFreshness({
+    stage: analysis.stage as Stage | null,
+    status: analysis.status,
+    stageAt: analysis.stage_at,
+    finished: analysis.finished_at !== null,
+  });
+
   return (
     <tr className="group border-b border-border align-top last:border-b-0 hover:bg-surface-raised">
       <td className="px-5 py-4 font-mono text-[13px] text-text">
         <div className="flex items-center gap-3">
           <RepositoryGlyph />
-          <span>{analysis.projects?.name ?? "—"}</span>
+          <Link
+            href={`/workspace/analyses/${analysis.id}`}
+            className="underline-offset-4 hover:underline"
+          >
+            {analysis.projects?.name ?? "—"}
+          </Link>
         </div>
       </td>
       <td className="px-4 py-4">
         <div className="flex items-start gap-2.5">
           <StatusPill status={analysis.status} />
+          {/* Nothing in this app times a run out, so a run whose stage has stopped
+              moving is the only sign it was abandoned. Marked rather than repaired:
+              deciding a run should be failed is a write somebody has to choose. */}
+          {freshness.stale ? (
+            <span
+              className="shrink-0 rounded border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-text-muted"
+              title={`No stage change for over ${STALE_AFTER_MINUTES} minutes. Nothing times a run out, so this may simply be slow.`}
+            >
+              stalled
+            </span>
+          ) : null}
           {analysis.error ? (
             <span className="max-w-[230px] text-[11px] leading-4 text-text-muted">
               {analysis.error}

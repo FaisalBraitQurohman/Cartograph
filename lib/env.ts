@@ -41,5 +41,15 @@ export const publicEnv = {
 export function serverEnv() {
   return {
     clerkSecretKey: required("CLERK_SECRET_KEY", process.env.CLERK_SECRET_KEY),
+    /**
+     * The Supabase secret key. It bypasses row-level security, so it is not a
+     * stand-in for a signed-in request - it is for a process that has no session
+     * at all, which is the pipeline run from a terminal. Anything a person
+     * triggers goes through the Clerk session instead, where the policy decides.
+     */
+    supabaseSecretKey: required(
+      "SUPABASE_SECRET_KEY",
+      process.env.SUPABASE_SECRET_KEY,
+    ),
   } as const;
 }
