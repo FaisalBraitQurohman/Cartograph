@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSupabaseClient } from "@/lib/supabase/client";
 import {
@@ -59,6 +59,13 @@ export function AnalysisProgressView({
   // it said when the page loaded.
   const [, setTick] = useState(0);
 
+  // The gap between the server render and the socket opening is real time in which a
+  // stage can move, and a broadcast sent in that gap is gone — the channel was not
+  // listening. One refresh on connect closes it, and only one: the server re-renders
+  // with the current row and this flag stays set for the life of the page. A refresh
+  // that repeated on every status change would be a polling loop with extra steps.
+  const refreshedOnConnect = useRef(false);
+
   useEffect(() => {
     const timer = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(timer);
@@ -86,11 +93,17 @@ export function AnalysisProgressView({
         setMessage(progress.message);
         setReached(PIPELINE.slice(0, PIPELINE.indexOf(next) + 1));
       },
-      setSubscription,
+      (status) => {
+        setSubscription(status);
+        if (status === "live" && !refreshedOnConnect.current) {
+          refreshedOnConnect.current = true;
+          router.refresh();
+        }
+      },
     );
 
     return stop;
-  }, [supabase, analysisId, organizationId]);
+  }, [supabase, analysisId, organizationId, router]);
 
   // On completion, go to the map. Server-rendered runs land here already finished -
   // a reload of a finished run, or a page opened after the fact - so the redirect

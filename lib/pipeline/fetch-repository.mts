@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { archiveUrlFor, type RepositoryRef } from "./repository-url.mts";
-import { readTarGz, stripTopDirectory } from "./untar.mts";
+import { readTarGzWithMetadata, stripTopDirectory } from "./untar.mts";
 
 /**
  * Downloading a public repository and putting it on disk.
@@ -38,6 +38,14 @@ export interface FetchedRepository {
   fileCount: number;
   /** Bytes of archive downloaded, which is what a timeout is measured against. */
   bytes: number;
+  /**
+   * The commit the archive is a snapshot of.
+   *
+   * Out of the archive's own pax header, which is the only place it appears — a
+   * tarball is not a checkout and carries no `.git`. Null when the archive did not
+   * carry one, which is a real possibility and not an error.
+   */
+  commitSha: string | null;
 }
 
 /** How long the whole download may take. A repository archive is a few megabytes. */
@@ -129,8 +137,11 @@ function isNotFound(error: FetchError): boolean {
  */
 function extractTo(ref: RepositoryRef, archive: Buffer, bytes: number): FetchedRepository {
   let entries;
+  let commitSha: string | null = null;
   try {
-    entries = stripTopDirectory(readTarGz(archive));
+    const read = readTarGzWithMetadata(archive);
+    entries = stripTopDirectory(read.entries);
+    commitSha = read.commitSha;
   } catch (error) {
     throw new FetchError(
       `The archive from ${ref.owner}/${ref.name} could not be read: ${
@@ -145,14 +156,27 @@ function extractTo(ref: RepositoryRef, archive: Buffer, bytes: number): FetchedR
 
   const root = mkdtempSync(join(tmpdir(), "cartograph-"));
   let fileCount = 0;
-  for (const entry of entries) {
-    const target = join(root, entry.path);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, entry.data);
-    fileCount += 1;
+  try {
+    for (const entry of entries) {
+      const target = join(root, entry.path);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, entry.data);
+      fileCount += 1;
+    }
+  } catch (error) {
+    // A half-written tree is worse than none: `fetchRepository` retries, and a retry
+    // that finds the previous attempt's files cannot tell them from the repository's
+    // own. The directory is removed here rather than left for `cleanUp`, because the
+    // throw means the caller never receives a `FetchedRepository` to hand back.
+    rmSync(root, { recursive: true, force: true });
+    throw new FetchError(
+      `The archive from ${ref.owner}/${ref.name} could not be written to disk: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 
-  return { path: root, fileCount, bytes };
+  return { path: root, fileCount, bytes, commitSha };
 }
 
 /** Remove a fetched repository. Called whatever happened, so nothing is left behind. */

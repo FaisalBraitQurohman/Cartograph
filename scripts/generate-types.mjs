@@ -172,11 +172,16 @@ const TABLES = {
   },
 };
 
-// Columns with a database default, so an insert may leave them out. `id` on every
-// table is `gen_random_uuid()` and every `created_at` is `now()`. The two
-// `is_*` booleans default to false, and every coverage counter defaults to zero.
+// Columns with a database default, so an insert may leave them out. Every
+// `created_at` is `now()`, the two `is_*` booleans default to false, and every
+// coverage counter defaults to zero.
+//
+// `id` is not in this list. It has a `gen_random_uuid()` default on every table
+// except `organizations`, whose id is the Clerk organization id and is supplied by
+// the caller — treating it as defaulted let a caller omit the one column that
+// identifies the tenant. It is added back per table below, because the exception is
+// about one table and not about the column.
 const DEFAULTS = new Set([
-  "id",
   "created_at",
   "fan_in",
   "fan_out",
@@ -192,6 +197,9 @@ const DEFAULTS = new Set([
   "imports_excluded",
   "imports_unresolved",
 ]);
+
+/** Tables whose `id` the database generates, so an insert may leave it out. */
+const GENERATED_ID = new Set(["analyses", "edges", "explanations", "file_roles", "files", "insights", "projects", "routes"]);
 
 // Every foreign key in the schema, in the shape the generator emits.
 const FOREIGN_KEYS = {
@@ -258,9 +266,17 @@ const unwritable = (spec) => spec.generated || spec.identity;
 // On insert a column may be omitted when the database would supply it: it has a
 // default, or it is nullable. On update every column may be omitted, because an
 // update only names what it changes.
-const optionalOnInsert = (name, spec) =>
-  unwritable(spec) ? "never" : DEFAULTS.has(name) || isNullable(spec) ? "?" : "";
-const optionalOnUpdate = (spec) => (unwritable(spec) ? "never" : "?");
+//
+// A column that cannot be written comes out as `never`, and `never` is the *type*
+// rather than a suffix on the name. Appending it to the name produced
+// `resolved_fractionnever`, which is not a property at all: a generated column
+// appeared to be writable under a mangled key, and TypeScript accepted it because
+// nothing else used that key.
+const optionalOnInsert = (name, spec, table) =>
+  unwritable(spec) ? "?" : DEFAULTS.has(name) || (name === "id" && GENERATED_ID.has(table)) || isNullable(spec) ? "?" : "";
+const optionalOnUpdate = (spec) => (unwritable(spec) ? "?" : "?");
+const typeOnInsert = (name, spec) => (unwritable(spec) ? "never" : spec.type);
+const typeOnUpdate = (spec) => (unwritable(spec) ? "never" : spec.type);
 
 function emitTable(name) {
   const columns = columnsOf(TABLES[name]).sort(([a], [b]) => (a < b ? -1 : 1));
@@ -272,13 +288,13 @@ function emitTable(name) {
 
   out.push("        Insert: {");
   for (const [column, spec] of columns) {
-    out.push(`          ${column}${optionalOnInsert(column, spec)}: ${spec.type}`);
+    out.push(`          ${column}${optionalOnInsert(column, spec, name)}: ${typeOnInsert(column, spec)}`);
   }
   out.push("        }");
 
   out.push("        Update: {");
   for (const [column, spec] of columns) {
-    out.push(`          ${column}${optionalOnUpdate(spec)}: ${spec.type}`);
+    out.push(`          ${column}${optionalOnUpdate(spec)}: ${typeOnUpdate(spec)}`);
   }
   out.push("        }");
 

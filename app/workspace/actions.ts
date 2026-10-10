@@ -71,7 +71,16 @@ export async function startAnalysis(formData: FormData): Promise<void> {
       // writes the stage without going through `onStage`, so the terminal state is
       // published here. Otherwise a failed run would leave the page on the last stage
       // that worked.
-      await publisher.publish(result.stage, result.error ?? STAGE_SUMMARY[result.stage]);
+      //
+      // The terminal stage, not `result.stage`: that one names where the run *broke*,
+      // which is for the error message and the dashboard row. Publishing "parsing" as
+      // the last thing a subscriber hears from a run that has stopped exactly matches
+      // the failure this banner exists to avoid — a page that looks like it is still
+      // working.
+      await publisher.publish(
+        result.status === "complete" ? "done" : "failed",
+        result.error ?? STAGE_SUMMARY[result.stage],
+      );
     } finally {
       await publisher.close();
     }

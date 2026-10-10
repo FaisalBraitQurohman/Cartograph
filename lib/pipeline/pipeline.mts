@@ -185,13 +185,20 @@ export async function runStages(
   let stage: Stage = "fetching";
 
   try {
+    // `stage` is the stage *in progress*, and it moves before the work rather than
+    // after. The catch below falls back to it for an error that is not one of ours —
+    // a bug in the parser, say — and a fallback that names the previous stage would
+    // report a parse failure as a fetch failure.
+    stage = "fetching";
     await stage_(client, analysisId, "fetching", null, options);
     const fetched = await fetchRepository(ref);
 
     try {
+      stage = "parsing";
       await stage_(client, analysisId, "parsing", null, options);
       const parse = parseRepository(fetched.path);
 
+      stage = "storing";
       await stage_(client, analysisId, "storing", null, options);
       const stored = await storeParse(client, {
         analysisId,
@@ -203,17 +210,17 @@ export async function runStages(
         skipped: parse.skipped,
       });
 
-      await finish(client, analysisId, "complete", parse.parserVersion, options);
+      await finish(client, analysisId, "complete", fetched.commitSha, parse.parserVersion, options);
       stage = "done";
 
       return {
         analysisId,
         status: "complete",
         stage,
-        // The parser records the version of itself that produced this, and the
-        // column is named commit_sha, so this is the parser's stamp and not a claim
-        // about the repository's git history. The archive does not contain one.
-        commitSha: parse.parserVersion,
+        // The commit the map is a snapshot of, out of the archive's own header. Null
+        // when the archive did not carry one, which is the honest answer rather than
+        // substituting anything else into a column named for it.
+        commitSha: fetched.commitSha,
         filesWritten: stored.filesWritten,
         edgesWritten: stored.edgesWritten,
         error: null,
@@ -285,30 +292,42 @@ async function stage_(
 }
 
 /**
- * Mark a run complete, and stamp it with the version of the parser that did it.
+ * Mark a run complete, and stamp it with the commit it mapped.
  *
- * The version is written to `commit_sha` as well as shown in the message. The first
- * run of this only put it in the message, and the row came back with a null
- * `commit_sha` while the returned result claimed it had been recorded — a claim the
- * database did not support. The stage message is what a person reads while waiting;
- * the column is what a later run compares against, and a message is not a column.
+ * The commit is what a later run compares against to decide whether the repository
+ * has moved on, so it is written to `commit_sha` — the column named for it. It used
+ * to hold the parser's version, which was the only thing available at the time and
+ * was never what the name said: a run of the same repository at the same commit
+ * reported a different "commit" every time the parser changed.
+ *
+ * The version is still shown, in the stage message, where a person reading the
+ * progress page can see which parser produced the map. Losing it from the row
+ * entirely would be the other mistake.
  */
 async function finish(
   client: Client,
   analysisId: string,
   status: "complete",
+  commitSha: string | null,
   parserVersion: string,
   options: PipelineOptions,
 ): Promise<void> {
+  // The message names both, because they answer different questions: which snapshot
+  // this map is of, and which parser drew it. The column takes only the first.
+  const message =
+    commitSha === null
+      ? `Mapped at an unknown commit (parser ${parserVersion})`
+      : `${commitSha.slice(0, 12)} (parser ${parserVersion})`;
+
   await writeStage(client, {
     analysisId,
     stage: "done",
-    message: parserVersion,
+    message,
     status,
-    commitSha: parserVersion,
+    commitSha,
     finished: true,
   });
-  options.onStage?.("done", parserVersion);
+  options.onStage?.("done", message);
 }
 
 async function findExisting(
@@ -380,6 +399,32 @@ async function createRows(
           "fetching",
         );
       }
+
+      // The project exists, so an analysis for it may exist too — this path is
+      // reached exactly when another run got here first, and that run wrote its own
+      // analysis. Creating a second one would break the one-analysis-per-repository
+      // rule that `prepareRun` just checked for and missed, and the two would
+      // disagree with each other. Only a project with no analysis at all gets a new
+      // one, which is the case where a previous run inserted its project and then
+      // died before inserting its analysis.
+      const { data: existing, error: existingError } = await client
+        .from("analyses")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("project_id", found.id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (existingError) {
+        throw new PipelineError(
+          `This repository already exists but its analyses could not be read: ${existingError.message}`,
+          "fetching",
+        );
+      }
+
+      const first = existing?.[0];
+      if (first) return { projectId: found.id, analysisId: first.id };
+
       return { projectId: found.id, analysisId: await createAnalysis(client, organizationId, found.id) };
     }
     throw new PipelineError(`Could not record the repository: ${projectError.message}`, "fetching");

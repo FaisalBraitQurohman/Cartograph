@@ -44,8 +44,12 @@ const result = await runAnalysis(
 console.log("");
 console.log(`Analysis  ${result.analysisId}`);
 console.log(`Status    ${result.status}${result.existing ? "  (already existed, nothing re-run)" : ""}`);
-console.log(`Failed in ${result.stage}`);
-if (result.error) console.log(`Error     ${result.error}`);
+// Only a failed run has a stage worth reporting. Printing "Failed in done" after a
+// run that succeeded reads as a failure that did not happen.
+if (result.status === "failed") {
+  console.log(`Failed in ${result.stage}`);
+  if (result.error) console.log(`Error     ${result.error}`);
+}
 
 // Read every table back rather than trust the counts the run reported.
 const analysisId = result.analysisId;

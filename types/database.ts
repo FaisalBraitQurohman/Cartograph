@@ -92,7 +92,7 @@ export type Database = {
           imports_total?: number
           imports_unresolved?: number
           organization_id: string
-          resolved_fractionnever: number | null
+          resolved_fraction?: never
         }
         Update: {
           analysis_id?: string
@@ -107,7 +107,7 @@ export type Database = {
           imports_total?: number
           imports_unresolved?: number
           organization_id?: string
-          resolved_fractionnever: number | null
+          resolved_fraction?: never
         }
         Relationships: [
           {
@@ -424,7 +424,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          id?: string
+          id: string
           name: string
         }
         Update: {
@@ -532,7 +532,7 @@ export type Database = {
           analysis_id: string
           created_at?: string
           entry_kind: string
-          idnever: number
+          id?: never
           organization_id: string
           path: string
           reason: string
@@ -541,7 +541,7 @@ export type Database = {
           analysis_id?: string
           created_at?: string
           entry_kind?: string
-          idnever: number
+          id?: never
           organization_id?: string
           path?: string
           reason?: string
@@ -580,7 +580,7 @@ export type Database = {
           analysis_id: string
           created_at?: string
           file_path: string
-          idnever: number
+          id?: never
           import_kind: string
           kind: string
           line: number
@@ -592,7 +592,7 @@ export type Database = {
           analysis_id?: string
           created_at?: string
           file_path?: string
-          idnever: number
+          id?: never
           import_kind?: string
           kind?: string
           line?: number

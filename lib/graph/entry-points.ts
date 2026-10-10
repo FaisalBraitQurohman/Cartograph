@@ -184,10 +184,20 @@ export function partitionByEntryPoint(
   return { reached, unmatched };
 }
 
-/** How many files each rule set aside, for the panel. Never the files themselves. */
+/**
+ * How many files each rule set aside, for the panel. Never the files themselves.
+ *
+ * Only files nothing imports. An entry point is a thing reached by something other
+ * than an import, and a file that a rule matches but that something *does* import is
+ * an ordinary module — the rules narrow the field, they do not decide it. Counting
+ * it here would report `index.ts` barrels as entry points, which is the case the
+ * rule comment above already says must not happen.
+ */
 export function entryPointCounts(parse: RepositoryParseResult): Map<string, number> {
+  const imported = new Set(parse.edges.map((edge) => edge.to));
   const counts = new Map<string, number>();
   for (const file of parse.files) {
+    if (imported.has(file.path)) continue;
     const rule = entryPointRuleFor(file);
     if (!rule) continue;
     counts.set(rule.id, (counts.get(rule.id) ?? 0) + 1);

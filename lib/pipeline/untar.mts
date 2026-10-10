@@ -47,15 +47,31 @@ export interface TarEntry {
 }
 
 export function readTarGz(compressed: Buffer): TarEntry[] {
+  return readTar(gunzipSync(compressed)).entries;
+}
+
+/**
+ * A tar archive's entries, and the global metadata GitHub puts beside them.
+ *
+ * The `comment` from the pax global header is the archive's commit SHA. It is the
+ * only place the commit appears: GitHub's tarballs are not a checkout, so there is no
+ * `.git` to ask and the filename only carries the branch or `HEAD`. Reading it is
+ * what lets an analysis say which commit it is a map of.
+ */
+export function readTarGzWithMetadata(compressed: Buffer): {
+  entries: TarEntry[];
+  commitSha: string | null;
+} {
   return readTar(gunzipSync(compressed));
 }
 
-export function readTar(archive: Buffer): TarEntry[] {
+export function readTar(archive: Buffer): { entries: TarEntry[]; commitSha: string | null } {
   const entries: TarEntry[] = [];
   // The pax record applies to the next entry and is cleared afterwards. Leaving it
   // set would apply one file's long name to every file after it.
   let paxPath: string | null = null;
   let paxLinkPath: string | null = null;
+  let commitSha: string | null = null;
 
   for (let offset = 0; offset + BLOCK <= archive.length; ) {
     const header = archive.subarray(offset, offset + BLOCK);
@@ -72,6 +88,10 @@ export function readTar(archive: Buffer): TarEntry[] {
       const globals = readPaxRecords(body);
       paxPath = globals.path ?? null;
       paxLinkPath = globals.linkpath ?? null;
+      // The archive's commit. Held rather than cleared with the per-entry records
+      // below: a global header applies to the whole archive, and the code is read
+      // before the loop can reach any file.
+      commitSha = globals.comment ?? commitSha;
       continue;
     }
 
@@ -111,7 +131,7 @@ export function readTar(archive: Buffer): TarEntry[] {
     entries.push({ path, data: Buffer.from(body), type, mode: readOctal(header, 100, 8) });
   }
 
-  return entries;
+  return { entries, commitSha };
 }
 
 /**

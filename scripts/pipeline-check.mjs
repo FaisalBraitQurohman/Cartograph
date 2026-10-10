@@ -15,7 +15,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { gzipSync } from "node:zlib";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readTarGz, stripTopDirectory } from "../lib/pipeline/untar.mts";
@@ -247,6 +247,14 @@ console.log("\n4. Fetching");
     fetched.fileCount > 0 && readFileSync(join(fetched.path, "index.js"), "utf8").length > 0,
     `${fetched.fileCount} files, ${(fetched.bytes / 1024).toFixed(0)}KB archive, into ${fetched.path}`,
   );
+  // The commit is what a later run compares against to tell whether the repository
+  // has moved on, so a fetch that silently returns null makes that impossible — and
+  // nothing else in the run would notice.
+  check(
+    "The archive's commit is read",
+    typeof fetched.commitSha === "string" && /^[0-9a-f]{40}$/.test(fetched.commitSha),
+    fetched.commitSha ?? "null",
+  );
   const before = fetched.path;
   cleanUp(fetched);
   check("The fetched copy is deleted afterwards", !exists(before), "removed");
@@ -292,12 +300,10 @@ if (failures > 0) process.exitCode = 1;
 // ---- Fixtures for the archive checks ----------------------------------------
 
 function exists(path) {
-  try {
-    readFileSync(path);
-    return true;
-  } catch {
-    return false;
-  }
+  // `existsSync`, not a read. Reading a directory throws EISDIR, so `readFileSync`
+  // reported a directory that is plainly still there as gone — which is the exact
+  // case this check exists to catch, since what `cleanUp` removes is a directory.
+  return existsSync(path);
 }
 
 function groupBy(rows, keyOf) {

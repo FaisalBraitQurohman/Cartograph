@@ -281,6 +281,11 @@ export function describeFolder(
   const folder = map.folders.find((candidate) => candidate.id === folderId);
   if (!folder) return null;
 
+  // A path-prefix scan, not a list carried on the node. `MapFolder` has no file list
+  // — `rows` is only what the panel is currently showing, which is fewer files than
+  // the folder holds once it is scrolled — so there is nothing to read from it.
+  // Prefix matching also handles the root, which `ROOT_BUCKET` names rather than any
+  // real directory.
   const files = parse.files.filter((file) => inFolder(file, folder.path));
   const byPart = new Map<string, FolderPart>();
   let lines = 0;
