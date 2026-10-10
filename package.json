@@ -15,7 +15,12 @@
     "map:stats": "node scripts/map-stats.mjs",
     "map:select": "node scripts/map-select.mjs",
     "map:detail": "node scripts/map-detail.mjs",
-    "map:insights": "node scripts/map-insights.mjs"
+    "map:insights": "node scripts/map-insights.mjs",
+    "map:pipeline": "node scripts/pipeline-check.mjs",
+    "map:parse": "node scripts/parse-store-check.mjs",
+    "map:run": "node --env-file=.env.local scripts/run-pipeline.mjs",
+    "map:progress": "node scripts/progress-check.mjs",
+    "map:roundtrip": "node scripts/roundtrip-check.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.11",

@@ -9,7 +9,16 @@ type AnalysisRow = Database["public"]["Tables"]["analyses"]["Row"];
  */
 type AnalysisWithProject = Pick<
   AnalysisRow,
-  "id" | "status" | "commit_sha" | "created_at" | "finished_at" | "error"
+  | "id"
+  | "status"
+  | "commit_sha"
+  | "created_at"
+  | "finished_at"
+  | "error"
+  // The two that say a run is working rather than finished. Nothing times a run out,
+  // so a stage that has stopped moving is the only evidence there is.
+  | "stage"
+  | "stage_at"
 > & {
   projects: Pick<
     Database["public"]["Tables"]["projects"]["Row"],
@@ -37,7 +46,7 @@ export async function listAnalyses(): Promise<AnalysisWithProject[]> {
     // One string literal, not concatenated: the types are inferred by parsing
     // this exact text, and a runtime-built string infers as an error.
     .select(
-      "id, status, commit_sha, created_at, finished_at, error, projects(name, repo_url)",
+      "id, status, commit_sha, created_at, finished_at, error, stage, stage_at, projects(name, repo_url)",
     )
     .order("created_at", { ascending: false });
 
